@@ -22,4 +22,15 @@ HAIL_LIGHTNING_CAT_MIN = "cat17"       # IMD hail flag category
 CLOUDBURST_RAIN_RATE_MM_HR = 15.0      # IMD "very heavy rain" threshold
 LIGHTNING_PROB_HIGH = 0.60             # Cat19 boundary
 
+# Grid-based hail rule (4c): reflectivity core AND cold cloud top AND
+# elevated lightning, all collocated on the fusion grid.
+HAIL_REFLECTIVITY_MIN_DBZ = 55.0
+HAIL_COLD_TOP_MAX_K = 210.0            # TIR-1 brightness temp, overshoot-top territory
+HAIL_LIGHTNING_PROB_MIN = 0.30
+
+# Downburst (4c): radial-velocity couplet magnitude — inbound/outbound
+# delta across the storm core. Only computable with real radar velocity,
+# never from a PNG overlay fallback.
+DOWNBURST_VELOCITY_DELTA_MS = 25.0
+
 INGEST_CYCLE_MINUTES = 15

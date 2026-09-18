@@ -1,11 +1,13 @@
 """FastAPI service (section 5a).
 
-Serves hazard GeoJSON and storm ETA computed from the latest IMD ingestion
+Serves hazard GeoJSON and storm ETA computed from the latest ingestion
 cycle. Inference is cached per file-write, recomputed only when a new
 ingestion snapshot lands (not on every request) — matches the "cached, not
 per-call" requirement in the plan.
 """
+import base64
 import glob
+import io
 import json
 import os
 import sys
@@ -18,9 +20,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from nowcast.configs.settings import IMD_DIR, INGEST_CYCLE_MINUTES, CLOUDBURST_RAIN_RATE_MM_HR
 from nowcast.ingestion.imd_nowcast import pull as pull_imd
-from nowcast.models.hazard import classify_station
+from nowcast.ingestion.satellite_insat import pull as pull_satellite
+from nowcast.ingestion.radar_puller import pull as pull_radar
+from nowcast.models.hazard import classify_station, hail_cells, downburst_cells
 from nowcast.models.eta import storm_cells
 from nowcast.models.pysteps_baseline import run_forecast, cloudburst_cells
+from nowcast.processing.fusion import build_fused_frame
 
 app = FastAPI(title="MeghDrishti Nowcast API")
 app.add_middleware(
@@ -32,8 +37,19 @@ app.add_middleware(
 
 _cache = {"records": [], "loaded_from": None}
 _forecast_cache = {"data": None, "computed_at": 0}
+_fusion_cache = {"frame": None, "computed_at": 0}
 _FORECAST_TTL_SECONDS = INGEST_CYCLE_MINUTES * 60
 _lock = threading.Lock()
+
+
+def _refresh_fusion():
+    now = time.time()
+    if _fusion_cache["frame"] is not None and now - _fusion_cache["computed_at"] < _FORECAST_TTL_SECONDS:
+        return _fusion_cache["frame"]
+    with _lock:
+        _fusion_cache["frame"] = build_fused_frame()
+        _fusion_cache["computed_at"] = now
+    return _fusion_cache["frame"]
 
 
 def _refresh_forecast():
@@ -66,18 +82,32 @@ def _refresh():
         _cache["loaded_from"] = path
 
 
+def _ingest_all():
+    """Run all three independent pullers (2a/2b/2c) — one source's failure
+    never blocks the others, matching the ingestion layer's failure-isolation
+    requirement (section 2)."""
+    for name, fn in (("imd", pull_imd), ("satellite", pull_satellite), ("radar", pull_radar)):
+        try:
+            fn()
+        except Exception as exc:
+            print(f"[api] {name} puller failed: {exc}")
+
+
 def _background_ingest_loop():
     while True:
-        pull_imd()
+        _ingest_all()
         _refresh()
+        _fusion_cache["frame"] = build_fused_frame()
+        _fusion_cache["computed_at"] = time.time()
         time.sleep(INGEST_CYCLE_MINUTES * 60)
 
 
 @app.on_event("startup")
 def startup():
     if _latest_snapshot_path() is None:
-        pull_imd()
+        _ingest_all()
     _refresh()
+    _refresh_fusion()
     t = threading.Thread(target=_background_ingest_loop, daemon=True)
     t.start()
 
@@ -128,6 +158,33 @@ def hazards(lead_time: int = Query(0, description="minutes; snaps to nearest pyS
     except Exception as exc:
         print(f"[api] cloudburst forecast unavailable: {exc}")
 
+    # hail + downburst (4c): grid-based rules on the fused raster, current
+    # timestep only — these don't have a pySTEPS-extrapolated future state.
+    if lead_time == 0:
+        try:
+            frame = _refresh_fusion()
+            if frame is not None:
+                for h in hail_cells(frame):
+                    features.append({
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [h["lon"], h["lat"]]},
+                        "properties": {
+                            "hazards": [{"type": "hail", "severity": "high",
+                                         "reflectivity_dbz": h["reflectivity_dbz"]}],
+                        },
+                    })
+                for d in downburst_cells(frame):
+                    features.append({
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [d["lon"], d["lat"]]},
+                        "properties": {
+                            "hazards": [{"type": "downburst", "severity": "high",
+                                         "velocity_delta_ms": d["velocity_delta_ms"]}],
+                        },
+                    })
+        except Exception as exc:
+            print(f"[api] grid hazards unavailable: {exc}")
+
     return {"type": "FeatureCollection", "features": features, "lead_time_minutes": lead_time}
 
 
@@ -151,10 +208,56 @@ def storm_eta():
     return {"cells": storm_cells(_cache["records"])}
 
 
+def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.cm as cm
+    import matplotlib.colors as mcolors
+    import numpy as np
+    from PIL import Image
+
+    norm = mcolors.Normalize(vmin=vmin if vmin is not None else float(arr.min()),
+                              vmax=vmax if vmax is not None else float(arr.max()))
+    rgba = (cm.get_cmap(cmap_name)(norm(arr)) * 255).astype(np.uint8)
+    # flip vertically: array row 0 is the southern edge of the grid, PNG row 0 is the top
+    img = Image.fromarray(np.flipud(rgba), mode="RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 @app.get("/raw-layers")
 def raw_layers():
-    # Placeholder until satellite/radar ingestion (2b/2c) is wired in.
-    return {"layers": [], "note": "satellite/radar overlays not yet ingested"}
+    """Satellite IR + radar reflectivity as image overlays (section 5a).
+
+    Rendered from the synthetic fusion grid until MOSDAC/IMD radar access
+    exists (2b/2c) — same bbox-anchored PNG-overlay contract the real
+    pipeline will use (real satellite reprojected via pyresample, real
+    radar as a Py-ART CAPPI), so the dashboard doesn't change when the
+    source is swapped.
+    """
+    frame = _refresh_fusion()
+    if frame is None:
+        return {"layers": [], "note": "no fused frame yet — ingestion still warming up"}
+
+    ch = frame["channels"]
+    layers = [
+        {
+            "id": "satellite_tir1",
+            "label": "Satellite IR (TIR-1, 10.8um)",
+            "bbox": frame["bbox"],
+            "image": _array_to_png_data_url(ch["tir1"], "gray_r", vmin=190, vmax=300),
+            "source": "synthetic",
+        },
+        {
+            "id": "radar_reflectivity",
+            "label": "Radar reflectivity (dBZ)",
+            "bbox": frame["bbox"],
+            "image": _array_to_png_data_url(ch["reflectivity_dbz"], "turbo", vmin=0, vmax=65),
+            "source": "synthetic",
+        },
+    ]
+    return {"layers": layers, "note": "synthetic sensors — no MOSDAC/IMD radar or satellite access yet"}
 
 
 @app.get("/health")
