@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+nowcast/data/**
+!nowcast/data/.gitkeep
+node_modules/
+*.log

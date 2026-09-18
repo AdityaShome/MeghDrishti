@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>MeghDrishti — Convective Nowcast Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="https://unpkg.com/maplibre-gl@3/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@3/dist/maplibre-gl.css" rel="stylesheet" />
+<style>
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #0b1220; color: #e6edf3; }
+  #map { position: absolute; inset: 0; }
+  #panel {
+    position: absolute; top: 12px; left: 12px; z-index: 5;
+    background: rgba(15, 23, 42, 0.9); border: 1px solid #2a3a55;
+    border-radius: 10px; padding: 14px 16px; width: 300px; max-height: 90vh; overflow-y: auto;
+  }
+  #panel h1 { font-size: 16px; margin: 0 0 4px; }
+  #panel .sub { font-size: 12px; color: #8fa3c2; margin-bottom: 10px; }
+  .cell { border-top: 1px solid #263349; padding: 8px 0; font-size: 13px; }
+  .cell:first-child { border-top: none; }
+  .hazard-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; margin-right: 4px; }
+  .hazard-hail { background: #7c3aed44; color: #c4b5fd; }
+  .hazard-lightning { background: #eab30844; color: #fde68a; }
+  .eta { font-variant-numeric: tabular-nums; font-weight: 600; color: #67e8f9; }
+  #status { position: absolute; bottom: 10px; left: 12px; z-index: 5; font-size: 11px; color: #6b7a99; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1>MeghDrishti</h1>
+  <div class="sub">Convective-scale nowcast — demo region</div>
+  <div id="cells">Loading…</div>
+</div>
+<div id="status"></div>
+<script>
+const API_BASE = "http://localhost:8000";
+
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://demotiles.maplibre.org/style.json",
+  center: [73.86, 18.52],
+  zoom: 9.5,
+});
+
+map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+const hazardColor = (hazards) => {
+  if (hazards.some(h => h.type === "hail")) return "#a855f7";
+  if (hazards.some(h => h.severity === "high")) return "#f59e0b";
+  return "#38bdf8";
+};
+
+async function fetchJSON(path) {
+  const res = await fetch(API_BASE + path);
+  if (!res.ok) throw new Error(path + " -> " + res.status);
+  return res.json();
+}
+
+async function refreshHazards() {
+  const geojson = await fetchJSON("/hazards");
+  if (map.getSource("hazards")) {
+    map.getSource("hazards").setData(geojson);
+  } else {
+    map.addSource("hazards", { type: "geojson", data: geojson });
+    map.addLayer({
+      id: "hazard-points",
+      type: "circle",
+      source: "hazards",
+      paint: {
+        "circle-radius": 9,
+        "circle-color": ["case",
+          ["in", "hail", ["get", "hazards"]], "#a855f7",
+          "#f59e0b"
+        ],
+        "circle-stroke-width": 2,
+        "circle-stroke-color": "#0b1220",
+        "circle-opacity": 0.85,
+      },
+    });
+  }
+  return geojson;
+}
+
+let cellsData = [];
+
+async function refreshETA() {
+  const data = await fetchJSON("/storm-eta");
+  cellsData = data.cells.map(c => ({ ...c, _fetchedAt: Date.now() }));
+  renderPanel();
+}
+
+function renderPanel() {
+  const el = document.getElementById("cells");
+  if (!cellsData.length) {
+    el.innerHTML = '<div class="sub">No active hazards in current cycle.</div>';
+    return;
+  }
+  el.innerHTML = cellsData.map(c => {
+    const elapsedMin = (Date.now() - c._fetchedAt) / 60000;
+    const remaining = Math.max(0, c.eta_minutes - elapsedMin);
+    const mm = Math.floor(remaining);
+    const ss = Math.floor((remaining - mm) * 60).toString().padStart(2, "0");
+    const tags = c.hazards.map(h =>
+      `<span class="hazard-tag hazard-${h.type}">${h.type} (${h.severity})</span>`
+    ).join("");
+    return `<div class="cell">
+      <strong>${c.name || c.station_id}</strong><br/>
+      ${tags}<br/>
+      ETA <span class="eta">${mm}m ${ss}s</span> · ${c.distance_km} km @ ${c.speed_kmh} km/h
+    </div>`;
+  }).join("");
+}
+
+async function tick() {
+  try {
+    await refreshHazards();
+    await refreshETA();
+    document.getElementById("status").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById("status").textContent = "API unreachable — run the backend (see README): " + e.message;
+  }
+}
+
+// countdown re-render every second, full data refresh every 30s
+map.on("load", () => {
+  tick();
+  setInterval(renderPanel, 1000);
+  setInterval(tick, 30000);
+});
+</script>
+</body>
+</html>
