@@ -145,6 +145,12 @@
     position: absolute; bottom: 16px; left: 14px; z-index: 8; font-size: 10.5px; color: var(--text-faint);
     font-family: 'JetBrains Mono', monospace; display: flex; align-items: center; gap: 6px;
   }
+  #banner {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 9;
+    background: rgba(240,180,41,0.14); border: 1px solid rgba(240,180,41,0.4); color: #f8d374;
+    font-size: 12px; padding: 8px 16px; border-radius: 8px; display: none; max-width: 90vw;
+  }
+  #banner.show { display: block; }
 
   /* maplibre popup restyle */
   .maplibregl-popup-content {
@@ -221,6 +227,7 @@
 </div>
 
 <div id="status-bar"><span id="status">connecting…</span></div>
+<div id="banner"></div>
 
 <script>
 const API_BASE = "http://localhost:8000";
@@ -244,6 +251,7 @@ const map = new maplibregl.Map({
       },
     },
     layers: [
+      { id: "bg-fallback", type: "background", paint: { "background-color": "#141c2b" } },
       { id: "esri-dark-canvas-layer", type: "raster", source: "esri-dark-canvas" },
     ],
     glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
@@ -254,6 +262,21 @@ const map = new maplibregl.Map({
 });
 
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+
+// Surface tile/network failures instead of leaving a silently blank map.
+function showBanner(text) {
+  const el = document.getElementById("banner");
+  el.textContent = text;
+  el.classList.add("show");
+}
+let tileErrorShown = false;
+map.on("error", (e) => {
+  console.error("[map error]", e && e.error);
+  if (!tileErrorShown) {
+    tileErrorShown = true;
+    showBanner("Basemap tiles failed to load (network/firewall may be blocking arcgisonline.com) — hazard data and overlays below are unaffected.");
+  }
+});
 
 async function fetchJSON(path) {
   const res = await fetch(API_BASE + path);
@@ -465,6 +488,7 @@ function renderPanel() {
   });
 }
 
+let apiErrorShown = false;
 async function tick() {
   try {
     await refreshHazards();
@@ -472,7 +496,11 @@ async function tick() {
     await refreshRawLayers();
     document.getElementById("status").textContent = "updated " + new Date().toLocaleTimeString();
   } catch (e) {
-    document.getElementById("status").textContent = "API unreachable — start the backend (see README): " + e.message;
+    document.getElementById("status").textContent = "API unreachable: " + e.message;
+    if (!apiErrorShown) {
+      apiErrorShown = true;
+      showBanner("Can't reach the backend at " + API_BASE + " — start it with: uvicorn nowcast.api.main:app --port 8000");
+    }
   }
 }
 
