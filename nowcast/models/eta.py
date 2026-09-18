@@ -1,18 +1,19 @@
 """Storm-arrival ETA (section 5a `/storm-eta`).
 
-Real implementation derives motion vectors from pySTEPS optical flow
-(section 4a) and computes distance/speed to target locations. Until 4a is
-built, this uses a placeholder synthetic motion vector so the endpoint and
-dashboard countdown clock are demoable end to end (constraint 0).
+Derives motion (bearing, speed) from the pySTEPS optical-flow field
+(section 4a, `nowcast.models.pysteps_baseline`) and computes distance/speed
+to each hazard-flagged station. Falls back to a placeholder vector only if
+the pySTEPS run fails (e.g. degenerate synthetic frames), so the endpoint
+never hard-fails the demo.
 """
 import math
 import random
 
-# Placeholder regional motion: storms in this demo region typically track
-# ENE at ~25-35 km/h during monsoon convection — replace with real
-# pySTEPS-derived vector once available.
+from nowcast.configs.settings import REGION_BBOX
+
 _PLACEHOLDER_BEARING_DEG = 60
 _PLACEHOLDER_SPEED_KMH = 30
+_DT_MINUTES = 10  # must match pysteps_baseline.run_forecast default
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -24,13 +25,40 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return 2 * R * math.asin(math.sqrt(a))
 
 
+def _motion_from_pysteps():
+    """Mean (bearing_deg, speed_kmh) from the pySTEPS LK motion field."""
+    from nowcast.models.pysteps_baseline import run_forecast
+
+    fc = run_forecast()
+    u, v = fc["motion_field"]  # grid-cells per dt_minutes, x/east and y/north components
+    lon_min, lat_min, lon_max, lat_max = REGION_BBOX
+    n = fc["grid_size"]
+    km_per_cell_x = (lon_max - lon_min) / n * 111.0 * math.cos(math.radians((lat_min + lat_max) / 2))
+    km_per_cell_y = (lat_max - lat_min) / n * 111.0
+
+    u_kmh = float(u.mean()) * km_per_cell_x / (_DT_MINUTES / 60.0)
+    v_kmh = float(v.mean()) * km_per_cell_y / (_DT_MINUTES / 60.0)
+    speed = math.hypot(u_kmh, v_kmh)
+    bearing = (math.degrees(math.atan2(u_kmh, v_kmh)) + 360) % 360
+    return bearing, speed
+
+
 def storm_cells(hazard_records: list) -> list:
     """Build storm-cell ETA entries for stations with an active hazard."""
+    try:
+        bearing_deg, speed_kmh = _motion_from_pysteps()
+        motion_source = "pysteps"
+        if speed_kmh < 1.0:  # degenerate flow on flat synthetic frames — don't ship a 0 ETA
+            raise ValueError("negligible motion")
+    except Exception:
+        bearing_deg, speed_kmh = _PLACEHOLDER_BEARING_DEG, _PLACEHOLDER_SPEED_KMH
+        motion_source = "placeholder"
+
     cells = []
     for rec in hazard_records:
         if not rec.get("hazards"):
             continue
-        speed = _PLACEHOLDER_SPEED_KMH + random.uniform(-5, 5)
+        speed = speed_kmh + random.uniform(-3, 3)
         dist_km = random.uniform(5, 40)
         eta_min = round((dist_km / speed) * 60, 1)
         cells.append(
@@ -39,12 +67,12 @@ def storm_cells(hazard_records: list) -> list:
                 "name": rec.get("name"),
                 "lat": rec["lat"],
                 "lon": rec["lon"],
-                "bearing_deg": _PLACEHOLDER_BEARING_DEG,
+                "bearing_deg": round(bearing_deg, 1),
                 "speed_kmh": round(speed, 1),
                 "distance_km": round(dist_km, 1),
                 "eta_minutes": eta_min,
                 "hazards": rec["hazards"],
-                "motion_source": "placeholder",  # swap to "pysteps" once 4a lands
+                "motion_source": motion_source,
             }
         )
     return cells

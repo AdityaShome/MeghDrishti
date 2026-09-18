@@ -21,12 +21,24 @@
   .hazard-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; margin-right: 4px; }
   .hazard-hail { background: #7c3aed44; color: #c4b5fd; }
   .hazard-lightning { background: #eab30844; color: #fde68a; }
+  .hazard-cloudburst { background: #0ea5e944; color: #7dd3fc; }
   .eta { font-variant-numeric: tabular-nums; font-weight: 600; color: #67e8f9; }
   #status { position: absolute; bottom: 10px; left: 12px; z-index: 5; font-size: 11px; color: #6b7a99; }
+  #slider-box {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
+    background: rgba(15, 23, 42, 0.9); border: 1px solid #2a3a55; border-radius: 10px;
+    padding: 10px 18px; width: min(420px, 70vw); text-align: center; font-size: 12px;
+  }
+  #slider-box input[type=range] { width: 100%; accent-color: #38bdf8; }
+  #slider-label { margin-top: 2px; color: #8fa3c2; }
 </style>
 </head>
 <body>
 <div id="map"></div>
+<div id="slider-box">
+  <div id="slider-label">Lead time: <span id="slider-value">now</span> — pySTEPS 0-6h extrapolation</div>
+  <input type="range" id="lead-slider" min="0" max="360" step="10" value="0" />
+</div>
 <div id="panel">
   <h1>MeghDrishti</h1>
   <div class="sub">Convective-scale nowcast — demo region</div>
@@ -57,8 +69,13 @@ async function fetchJSON(path) {
   return res.json();
 }
 
+let leadMinutes = 0;
+
 async function refreshHazards() {
-  const geojson = await fetchJSON("/hazards");
+  const geojson = await fetchJSON(`/hazards?lead_time=${leadMinutes}`);
+  geojson.features.forEach(f => {
+    f.properties.hazard_types = f.properties.hazards.map(h => h.type);
+  });
   if (map.getSource("hazards")) {
     map.getSource("hazards").setData(geojson);
   } else {
@@ -70,7 +87,8 @@ async function refreshHazards() {
       paint: {
         "circle-radius": 9,
         "circle-color": ["case",
-          ["in", "hail", ["get", "hazards"]], "#a855f7",
+          ["in", "hail", ["get", "hazard_types"]], "#a855f7",
+          ["in", "cloudburst", ["get", "hazard_types"]], "#0ea5e9",
           "#f59e0b"
         ],
         "circle-stroke-width": 2,
@@ -81,6 +99,14 @@ async function refreshHazards() {
   }
   return geojson;
 }
+
+const slider = document.getElementById("lead-slider");
+const sliderValueEl = document.getElementById("slider-value");
+slider.addEventListener("input", () => {
+  leadMinutes = parseInt(slider.value, 10);
+  sliderValueEl.textContent = leadMinutes === 0 ? "now" : `+${leadMinutes} min`;
+  refreshHazards().catch(() => {});
+});
 
 let cellsData = [];
 

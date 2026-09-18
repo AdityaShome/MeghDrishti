@@ -3,3 +3,7 @@ uvicorn[standard]
 requests
 python-dotenv
 pydantic
+pysteps
+numpy
+scipy
+matplotlib
