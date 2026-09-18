@@ -2,36 +2,46 @@
 
 Convective-scale nowcasting system (SIH 2026) — 0-6h thunderstorm/hail/downburst/cloudburst
 nowcasting fusing IMD radar, INSAT satellite, and lightning data on a GIS dashboard.
-Full plan: [`project.md`](project.md).
+Full plan: [`project.md`](project.md). One-page write-up: [`WRITEUP.md`](WRITEUP.md).
 
-## Current status (Checkpoint 4, replay mode — all data is mock/synthetic)
+## Current status — Definition of Done (§8) satisfied, entirely on synthetic data
 
-- IMD nowcast puller (`nowcast/ingestion/imd_nowcast.py`) — runs in **mock/replay mode**
-  (no MOSDAC/IMD credentials configured yet). Generates plausible station data with the
-  exact schema the real API will return, so swapping in live data later is a config
-  change (`USE_LIVE_IMD=true` in `.env`), not a rewrite.
-- Synthetic reflectivity frames (`nowcast/processing/synthetic_radar.py`) — stand-in for
-  real radar until MOSDAC access exists.
-- pySTEPS optical-flow + extrapolation baseline (`nowcast/models/pysteps_baseline.py`,
-  section 4a) — real Lucas-Kanade motion estimation + semi-Lagrangian extrapolation,
-  0-6h at 10-min steps, running on the synthetic frames above.
-- Rule-based hazard classification — hail, lightning (`nowcast/models/hazard.py`) and
-  cloudburst from pySTEPS rain-rate extrapolation (`nowcast/models/pysteps_baseline.py:cloudburst_cells`).
-  Downburst still blocked on real radar radial-velocity data.
-- ETA model (`nowcast/models/eta.py`) — motion (bearing/speed) now derived from the
-  pySTEPS optical-flow field, not a placeholder; falls back to placeholder only if the
-  flow is degenerate.
-- FastAPI backend — `/hazards` (lead_time-aware, includes cloudburst), `/storm-eta`,
-  `/forecast` (6h rain-rate summary), `/raw-layers` — `nowcast/api/main.py`.
-- MapLibre dashboard — hazard layer, live countdown clocks, 0-6h lead-time slider —
-  `nowcast/dashboard/index.html`.
+No MOSDAC or IMD API credentials exist yet (see Next steps) — **every data source below
+is synthetic**, clearly labeled as such in code and in the dashboard itself. All three
+mock generators (IMD, satellite, radar) share one canonical fake storm trajectory
+(`nowcast/processing/storm_track.py`) so they agree with each other, and every ingestion
+module has a `_fetch_live()` stub with the real API's schema ready to fill in.
 
-Not yet built: real satellite ingestion (2b), real radar ingestion (2c), fusion grid (3),
-deep model (4b). See `project.md` for the full phased plan and fallback matrix.
+- **Ingestion (2a/2b/2c)**: `nowcast/ingestion/{imd_nowcast,satellite_insat,radar_puller}.py`
+  — mock IMD nowcast JSON, synthetic INSAT-like TIR1/WV/MWIR, synthetic radar
+  reflectivity + radial velocity (for downburst). Each runs independently; one failing
+  doesn't block the others (`_ingest_all` in `api/main.py`).
+- **Fusion (§3)**: `nowcast/processing/fusion.py` — regrids and stacks
+  `[tir1, wv, mwir, reflectivity, lightning_prob]` into one multi-channel raster,
+  rolling buffer scaffold included.
+- **pySTEPS baseline (4a)**: `nowcast/models/pysteps_baseline.py` — real Lucas-Kanade
+  optical flow + semi-Lagrangian extrapolation, 0-6h at 10-min steps, on the synthetic
+  reflectivity sequence.
+- **Hazard rules (4c)**, all rule-based with documented thresholds in
+  `nowcast/configs/settings.py`:
+  - Hail: `nowcast/models/hazard.py:hail_cells` — reflectivity + cold cloud top +
+    lightning, collocated on the fusion grid.
+  - Downburst: `nowcast/models/hazard.py:downburst_cells` — radial-velocity couplet
+    magnitude via local max/min filter.
+  - Cloudburst: `nowcast/models/pysteps_baseline.py:cloudburst_cells` — pySTEPS
+    extrapolated rain rate vs. IMD's very-heavy-rain threshold.
+  - Lightning: IMD probability category thresholds.
+- **ETA/motion**: `nowcast/models/eta.py` — bearing/speed derived from the same pySTEPS
+  Lucas-Kanade field, not a separate model.
+- **API**: `nowcast/api/main.py` — `/hazards` (lead-time aware, all 4 hazard types),
+  `/storm-eta`, `/forecast` (6h rain-rate summary), `/raw-layers` (satellite IR + radar
+  reflectivity as real PNG image overlays), `/health`.
+- **Dashboard**: `nowcast/dashboard/index.html` — hazard layer (color-coded by type),
+  satellite/radar image overlay toggles, live countdown clocks, 0-6h lead-time slider,
+  legend. Verified with a headless-browser pass (Playwright) — see below.
 
-**Everything above runs on synthetic/mock data.** No real IMD, MOSDAC, or radar data is
-in the pipeline yet — that requires the account registration in section 1, which needs to
-be done by a human (see Next steps).
+Not built: real satellite/radar access (blocked on §1 registration), deep model (4b,
+stretch goal, intentionally skipped per the plan's fallback-first guidance).
 
 ## Run it
 
@@ -41,13 +51,27 @@ uvicorn nowcast.api.main:app --reload --port 8000
 ```
 
 Then open `nowcast/dashboard/index.html` directly in a browser (it calls `http://localhost:8000`).
+On startup the backend runs all three pullers once, fuses them, and serves immediately;
+it then re-ingests + recomputes every `INGEST_CYCLE_MINUTES` (15 by default).
+
+## Verification
+
+Endpoints were hit live and the dashboard was driven with Playwright (headless Chromium)
+to confirm: map loads, all 4 hazard types render simultaneously and colocate on one
+storm, satellite/radar PNG overlays render, the countdown clock actually ticks down in
+real time, and the lead-time slider correctly advects the cloudburst layer via pySTEPS
+while leaving the "now"-only hazards (hail/downburst/lightning) in place. Zero console
+errors. One real bug was caught this way and fixed: pySTEPS' synthetic history window
+and the "now" snapshot didn't share a time origin, silently offsetting every forecast
+label by ~50 minutes — see the fix commit for detail.
 
 ## Next steps (in plan order)
 
-1. Register MOSDAC + request IMD API access (project.md section 1) — do this first, it's the
-   longest lead time item, and nothing above becomes "real" without it.
-2. Implement `_fetch_live` in `imd_nowcast.py` once IMD API access is granted.
-3. Build satellite (2b) and radar (2c) pullers — real radar CAPPI grids replace
-   `synthetic_radar.py` as pySTEPS' input (same array shape/units, drop-in swap).
-4. Build the fusion grid (section 3) to combine satellite + radar + lightning into one
-   multi-channel raster; wire in downburst hazard once real radar velocity exists.
+1. Register MOSDAC + request IMD API access (project.md section 1) — do this first, it's
+   the longest lead time item, and nothing above becomes "real" without it.
+2. Implement `_fetch_live` in `imd_nowcast.py`, `satellite_insat.py`, `radar_puller.py`
+   once access is granted — swap-in points are marked, schemas already match.
+3. Once real radar CAPPI grids exist, downburst/hail thresholds should be re-validated
+   against them — the current thresholds are textbook values, never checked against data.
+4. Stretch: fine-tuned deep model (SmaAt-UNet/DGMR) alongside pySTEPS with a comparison
+   toggle (4b); multi-region coverage; historical validation against Bhuvan LDSN.
