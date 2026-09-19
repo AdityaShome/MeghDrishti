@@ -37,9 +37,33 @@ app.add_middleware(
 
 _cache = {"records": [], "loaded_from": None}
 _forecast_cache = {"data": None, "computed_at": 0}
+_dgmr_cache = {"data": None, "computed_at": 0, "load_failed": False}
 _fusion_cache = {"frame": None, "computed_at": 0}
 _FORECAST_TTL_SECONDS = INGEST_CYCLE_MINUTES * 60
 _lock = threading.Lock()
+
+
+def _refresh_dgmr():
+    """DGMR (section 4b) is loaded and run lazily, on first request only —
+    it's a comparison/demo feature, not on the critical startup path, and
+    weight download + CPU inference (~seconds) shouldn't slow down the
+    primary pySTEPS-driven demo. Cached for the same TTL as pySTEPS."""
+    if _dgmr_cache["load_failed"]:
+        return None
+    now = time.time()
+    if _dgmr_cache["data"] is not None and now - _dgmr_cache["computed_at"] < _FORECAST_TTL_SECONDS:
+        return _dgmr_cache["data"]
+    try:
+        from nowcast.models.dgmr_nowcast import run_forecast as dgmr_run_forecast
+
+        with _lock:
+            _dgmr_cache["data"] = dgmr_run_forecast()
+            _dgmr_cache["computed_at"] = now
+        return _dgmr_cache["data"]
+    except Exception as exc:
+        print(f"[api] DGMR unavailable, disabling for this process: {exc}")
+        _dgmr_cache["load_failed"] = True
+        return None
 
 
 def _refresh_fusion():
@@ -189,11 +213,27 @@ def hazards(lead_time: int = Query(0, description="minutes; snaps to nearest pyS
 
 
 @app.get("/forecast")
-def forecast():
-    """0-6h pySTEPS extrapolation summary (section 4a): max rain rate per
-    lead step, for the dashboard time slider / baseline-vs-AI comparison."""
+def forecast(model: str = Query("pysteps", pattern="^(pysteps|dgmr)$")):
+    """Forecast summary for the dashboard time slider / baseline-vs-AI
+    comparison (section 4b). `model=pysteps` (default, 0-6h, calibrated
+    mm/hr) or `model=dgmr` (0-90min, relative intensity 0-1 — see
+    dgmr_nowcast module docstring for why it's not in mm/hr)."""
+    if model == "dgmr":
+        fc = _refresh_dgmr()
+        if fc is None:
+            return {"available": False, "reason": "DGMR failed to load in this process (see server log)"}
+        return {
+            "available": True,
+            "timestamps_min": fc["timestamps_min"],
+            "max_intensity": [round(float(f.max()), 2) for f in fc["intensity_forecast"]],
+            "mean_intensity": [round(float(f.mean()), 3) for f in fc["intensity_forecast"]],
+            "bbox": fc["bbox"],
+            "source": "dgmr-synthetic-input",
+            "note": fc["note"],
+        }
     fc = _refresh_forecast()
     return {
+        "available": True,
         "timestamps_min": fc["timestamps_min"],
         "max_rainrate_mm_hr": [round(float(f.max()), 1) for f in fc["rainrate_forecast"]],
         "mean_rainrate_mm_hr": [round(float(f.mean()), 2) for f in fc["rainrate_forecast"]],
@@ -224,6 +264,33 @@ def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None):
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+@app.get("/nowcast-frame")
+def nowcast_frame(
+    model: str = Query("pysteps", pattern="^(pysteps|dgmr)$"),
+    lead_time: int = Query(10, description="minutes; snaps to nearest available lead step"),
+):
+    """Single forecast frame as a PNG overlay (section 4b's baseline-vs-AI
+    comparison toggle) — pySTEPS rain rate (calibrated mm/hr, turbo
+    colormap) or DGMR relative intensity (unitless 0-1, plasma colormap,
+    distinct palette so it's visually obvious this is not the same unit)."""
+    if model == "dgmr":
+        fc = _refresh_dgmr()
+        if fc is None:
+            return {"available": False, "reason": "DGMR failed to load in this process (see server log)"}
+        idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
+        frame = fc["intensity_forecast"][idx]
+        image = _array_to_png_data_url(frame, "plasma", vmin=0, vmax=1)
+        return {"available": True, "image": image, "bbox": fc["bbox"],
+                "lead_minutes": fc["timestamps_min"][idx], "source": "dgmr", "note": fc["note"]}
+
+    fc = _refresh_forecast()
+    idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
+    frame = fc["rainrate_forecast"][idx]
+    image = _array_to_png_data_url(frame, "turbo", vmin=0, vmax=65)
+    return {"available": True, "image": image, "bbox": fc["bbox"],
+            "lead_minutes": fc["timestamps_min"][idx], "source": "pysteps"}
 
 
 @app.get("/raw-layers")

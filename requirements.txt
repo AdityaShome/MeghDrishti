@@ -8,3 +8,6 @@ numpy
 scipy
 matplotlib
 Pillow
+torch
+dgmr
+huggingface_hub
