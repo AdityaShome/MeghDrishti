@@ -42,24 +42,35 @@ module has a `_fetch_live()` stub with the real API's schema ready to fill in.
   `/storm-eta`, `/forecast?model=pysteps|dgmr`, `/nowcast-frame?model=...&lead_time=...`
   (single-frame PNG for the model comparison toggle), `/raw-layers` (satellite IR + radar
   reflectivity as real PNG image overlays), `/health`.
-- **Dashboard**: `nowcast/dashboard/index.html` — real basemap (Esri dark-gray canvas, no
-  API key needed), heatmap-based hazard rendering (not stacked point markers), station
-  markers with popups, a pySTEPS/DGMR model-comparison toggle, live countdown clocks,
-  lead-time slider, legend. Verified with a headless-browser pass (Playwright) — see below.
+- **Dashboard** (`nowcast/dashboard/`, React + TypeScript + Vite — see its own README):
+  real basemap (Esri dark-gray canvas, no API key needed), heatmap-based hazard rendering
+  (not stacked point markers), station markers with popups, a pySTEPS/DGMR model-comparison
+  toggle, temperature/humidity/wind overlays across a wider region, click-to-inspect a
+  region (dashed selection box, zoom, and a user-controlled 0-6h future-trend panel with
+  its own chart), live countdown clocks, lead-time slider, legend. The original single-file
+  HTML/JS version is kept at `nowcast/dashboard/legacy/index.html` for reference but is
+  no longer maintained. Verified with a headless-browser pass (Playwright) — see below.
 
 Not built: real satellite/radar access (blocked on §1 registration), SmaAt-UNet fine-tuning
 (the plan's Option B for 4b — DGMR zero-shot, Option A, was built instead).
 
 ## Run it
 
+Backend:
 ```bash
 pip install -r requirements.txt
 uvicorn nowcast.api.main:app --reload --port 8000
 ```
+On startup it runs all three pullers once, fuses them, and serves immediately; it then
+re-ingests + recomputes every `INGEST_CYCLE_MINUTES` (15 by default).
 
-Then open `nowcast/dashboard/index.html` directly in a browser (it calls `http://localhost:8000`).
-On startup the backend runs all three pullers once, fuses them, and serves immediately;
-it then re-ingests + recomputes every `INGEST_CYCLE_MINUTES` (15 by default).
+Dashboard:
+```bash
+cd nowcast/dashboard
+npm install
+npm run dev
+```
+Opens at `http://localhost:5173` and talks to the backend at `http://localhost:8000`.
 
 ## Verification
 
@@ -68,9 +79,15 @@ to confirm: map loads, all 4 hazard types render simultaneously and colocate on 
 storm, satellite/radar PNG overlays render, the countdown clock actually ticks down in
 real time, and the lead-time slider correctly advects the cloudburst layer via pySTEPS
 while leaving the "now"-only hazards (hail/downburst/lightning) in place. Zero console
-errors. One real bug was caught this way and fixed: pySTEPS' synthetic history window
-and the "now" snapshot didn't share a time origin, silently offsetting every forecast
-label by ~50 minutes — see the fix commit for detail.
+errors. Two real bugs were caught this way and fixed:
+- pySTEPS' synthetic history window and the "now" snapshot didn't share a time origin,
+  silently offsetting every forecast label by ~50 minutes.
+- In the React rewrite, `MapProvider`'s map container and the rest of the UI ended up as
+  DOM *siblings* instead of nested (because a Context.Provider renders no element of its
+  own), and separately MapLibre's own stylesheet was overriding the container's
+  `position: absolute` with its own `position: relative` on class-selector import-order —
+  together these collapsed the map to zero height and silently ate every click. Fixed by
+  moving the shell wrapper into `MapProvider` and setting position via inline style.
 
 ## Next steps (in plan order)
 
