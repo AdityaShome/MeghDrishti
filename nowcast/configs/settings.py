@@ -5,9 +5,18 @@ inside MOSDAC radar footprint). Change BBOX to retarget the whole pipeline.
 """
 import os
 
-# lon_min, lat_min, lon_max, lat_max
+# lon_min, lat_min, lon_max, lat_max — fine storm-scale grid (radar/satellite/
+# pySTEPS/DGMR/hazards). Kept small on purpose: these all run per-request or
+# per-ingest-cycle and the demo storm needs to stay inside it.
 REGION_BBOX = (73.6, 18.3, 74.1, 18.8)
 REGION_NAME = "Pune"
+
+# Wider synthetic weather-variable grid (temperature/humidity/wind) — covers
+# Maharashtra-ish extent so the map shows colored data across the visible
+# area, not just the tiny storm bbox. Coarser resolution since it's a smooth
+# ambient field, not something pySTEPS/DGMR need to consume.
+WIDE_BBOX = (72.5, 15.5, 78.5, 21.5)
+WIDE_GRID_SIZE = 48
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 IMD_DIR = os.path.join(DATA_DIR, "imd")

@@ -101,16 +101,25 @@
   #right-rail {
     position: absolute; top: 68px; right: 14px; bottom: 84px; z-index: 8;
     width: 210px; display: flex; flex-direction: column; gap: 10px; pointer-events: none;
+    overflow-y: auto; overflow-x: hidden;
   }
-  #right-rail .card { pointer-events: auto; }
+  #right-rail::-webkit-scrollbar { width: 4px; }
+  #right-rail::-webkit-scrollbar-thumb { background: #263049; border-radius: 4px; }
+  #right-rail .card { pointer-events: auto; flex: none; }
   #legend .body { padding: 12px 14px; }
-  .model-btn {
+  .model-btn, .var-btn {
     background: #141b2b; border: 1px solid var(--panel-border); color: var(--text-dim);
     font-size: 11px; font-weight: 600; padding: 6px 0; border-radius: 6px; cursor: pointer;
     font-family: 'Inter', sans-serif; transition: 0.15s;
   }
-  .model-btn:hover { color: var(--text); }
-  .model-btn.active { background: var(--accent); border-color: var(--accent); color: #06121e; }
+  .model-btn:hover, .var-btn:hover { color: var(--text); }
+  .model-btn.active, .var-btn.active { background: var(--accent); border-color: var(--accent); color: #06121e; }
+  #var-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #var-legend-scale {
+    height: 8px; border-radius: 4px; margin-top: 10px;
+    background: linear-gradient(90deg, var(--scale-from, #3fb6ff), var(--scale-to, #f5486b));
+  }
+  #var-legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-faint); margin-top: 3px; font-family: 'JetBrains Mono', monospace; }
   .legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 7px 0; }
   .legend-swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; }
   .toggle-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; margin: 8px 0; }
@@ -142,11 +151,11 @@
   #timeline-head .label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; }
   #timeline-head .value { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 600; color: var(--accent); }
   input[type=range] {
-    -webkit-appearance: none; width: 100%; height: 4px; border-radius: 2px;
+    -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px;
     background: #1f2937; outline: none;
   }
   input[type=range]::-webkit-slider-thumb {
-    -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+    -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%;
     background: var(--accent); box-shadow: 0 0 8px rgba(63,182,255,0.7); cursor: pointer;
     border: 2px solid #0a0e16;
   }
@@ -162,6 +171,28 @@
     font-size: 12px; padding: 8px 16px; border-radius: 8px; display: none; max-width: 90vw;
   }
   #banner.show { display: block; }
+
+  /* ---------- region selection panel ---------- */
+  #region-card { display: none; }
+  #region-card.show { display: block; }
+  #region-close {
+    background: none; border: none; color: var(--text-dim); font-size: 15px; cursor: pointer;
+    line-height: 1; padding: 0 2px;
+  }
+  #region-close:hover { color: var(--text); }
+  #region-coords { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--text-faint); margin-bottom: 10px; }
+  .region-metric { display: flex; align-items: baseline; justify-content: space-between; margin: 6px 0; }
+  .region-metric .k { font-size: 11.5px; color: var(--text-dim); }
+  .region-metric .v { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; }
+  #region-slider-head { display: flex; justify-content: space-between; margin: 10px 0 4px; font-size: 10.5px; color: var(--text-dim); }
+  #region-slider-head .v { color: var(--accent); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  #region-trend { display: flex; gap: 2px; margin-top: 10px; height: 30px; align-items: flex-end; }
+  #region-trend .bar { flex: 1; border-radius: 2px 2px 0 0; min-height: 3px; }
+  #region-trend-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-faint); margin-top: 3px; font-family: 'JetBrains Mono', monospace; }
+
+  /* dashed selection box on the map */
+  .region-hint { position: absolute; bottom: 16px; right: 14px; z-index: 7; font-size: 10.5px; color: var(--text-faint);
+    font-family: 'JetBrains Mono', monospace; }
 
   /* maplibre popup restyle */
   .maplibregl-popup-content {
@@ -243,7 +274,41 @@
       </div>
     </div>
   </div>
+
+  <div id="var-card" class="card">
+    <div class="card-head"><h2>Weather variables</h2></div>
+    <div class="body">
+      <div id="var-toggle">
+        <button class="var-btn active" data-var="none">None</button>
+        <button class="var-btn" data-var="temperature">Temp</button>
+        <button class="var-btn" data-var="humidity">Humidity</button>
+        <button class="var-btn" data-var="wind_speed">Wind</button>
+      </div>
+      <div id="var-legend-scale"></div>
+      <div id="var-legend-labels"><span id="var-min">—</span><span id="var-label" style="color:var(--text-dim)">select a variable</span><span id="var-max">—</span></div>
+      <div id="source-note" style="margin-top:10px;"><span class="badge">SYNTHETIC</span>Ambient field, not an IMD/MOSDAC product — smooth climatology + storm perturbation.</div>
+    </div>
+  </div>
+
+  <div id="region-card" class="card">
+    <div class="card-head">
+      <h2>Selected region</h2>
+      <button id="region-close">✕</button>
+    </div>
+    <div class="body">
+      <div id="region-coords">—</div>
+      <div class="region-metric"><span class="k">Temperature</span><span class="v" id="region-temp">—</span></div>
+      <div class="region-metric"><span class="k">Humidity</span><span class="v" id="region-humidity">—</span></div>
+      <div class="region-metric"><span class="k">Wind</span><span class="v" id="region-wind">—</span></div>
+      <div class="region-metric"><span class="k">Cloudburst rain rate</span><span class="v" id="region-cloudburst">—</span></div>
+      <div id="region-slider-head"><span>Future time scale</span><span class="v" id="region-slider-value">Now</span></div>
+      <input type="range" id="region-slider" min="0" max="360" step="30" value="0" />
+      <div id="region-trend"></div>
+      <div id="region-trend-labels"><span>now</span><span>+6h</span></div>
+    </div>
+  </div>
 </div>
+<div class="region-hint" id="region-hint">Click anywhere on the map to inspect a region</div>
 
 <div id="timeline" class="card">
   <div class="body">
@@ -301,7 +366,7 @@ function showBanner(text) {
 }
 let tileErrorShown = false;
 map.on("error", (e) => {
-  console.error("[map error]", e && e.error);
+  console.error("[map error] " + ((e && e.error && (e.error.message || e.error.toString())) || "unknown"));
   if (!tileErrorShown) {
     tileErrorShown = true;
     showBanner("Basemap tiles failed to load (network/firewall may be blocking arcgisonline.com) — hazard data and overlays below are unaffected.");
@@ -396,7 +461,232 @@ function ensureLayers() {
         <div class="popup-row">Lightning cat: ${p.lightning_prob_cat || "—"}</div>`)
       .addTo(map);
   });
+
+  // dashed selection box for the region-inspection feature, topmost layer
+  map.addSource("region-box", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addLayer({
+    id: "region-box-line",
+    type: "line",
+    source: "region-box",
+    paint: { "line-color": "#3fb6ff", "line-width": 2, "line-dasharray": [2, 2], "line-opacity": 0.9 },
+  });
 }
+
+// ---- weather variable overlays (temperature / humidity / wind) ----
+const VAR_COLOR_STOPS = {
+  temperature: ["#3fb6ff", "#f0b429", "#f5486b"],
+  humidity: ["#f5f0c8", "#4fb5d6", "#1c4e8a"],
+  wind_speed: ["#2a1a5e", "#b53f92", "#f0b429"],
+};
+function lerpColor(stops, t) {
+  t = Math.max(0, Math.min(1, t));
+  const seg = t * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(seg));
+  const localT = seg - i;
+  const c1 = stops[i].match(/\w\w/g).map(h => parseInt(h, 16));
+  const c2 = stops[i + 1].match(/\w\w/g).map(h => parseInt(h, 16));
+  const rgb = c1.map((v, k) => Math.round(v + (c2[k] - v) * localT));
+  return `rgb(${rgb.join(",")})`;
+}
+
+let weatherLayersData = null;
+let windVectorData = null;
+let activeVar = "none";
+
+async function ensureWeatherLayersLoaded() {
+  if (weatherLayersData) return weatherLayersData;
+  const data = await fetchJSON("/weather-layers");
+  weatherLayersData = {};
+  for (const layer of data.layers) weatherLayersData[layer.id] = layer;
+  for (const layer of data.layers) {
+    const sourceId = "raster-" + layer.id;
+    const coords = bboxToCoords(layer.bbox);
+    map.addSource(sourceId, { type: "image", url: layer.image, coordinates: coords });
+    const beforeId = map.getLayer("heat-hail") ? "heat-hail" : undefined;
+    map.addLayer({ id: "layer-" + layer.id, type: "raster", source: sourceId,
+      paint: { "raster-opacity": 0.55 }, layout: { visibility: "none" } }, beforeId);
+  }
+  return weatherLayersData;
+}
+
+function createArrowIcon(size) {
+  // Locally-drawn SDF arrow instead of a text glyph — avoids depending on
+  // an external glyphs font server (fonts.openmaptiles.org has returned
+  // malformed PBFs for some font-stack/range combos in testing, which
+  // MapLibre logs as "Unimplemented type: 4" and silently drops the layer).
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#000";
+  const c = size / 2;
+  ctx.beginPath();
+  ctx.moveTo(c, 1);
+  ctx.lineTo(c + size * 0.28, size - 3);
+  ctx.lineTo(c, size * 0.62);
+  ctx.lineTo(c - size * 0.28, size - 3);
+  ctx.closePath();
+  ctx.fill();
+  return ctx.getImageData(0, 0, size, size);
+}
+
+async function ensureWindLayerLoaded() {
+  if (windVectorData) return;
+  const data = await fetchJSON("/wind-vectors");
+  windVectorData = data.points;
+  const features = windVectorData.map(p => ({
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+    properties: { dir: p.wind_dir_deg, speed: p.wind_speed_ms },
+  }));
+  map.addSource("wind-arrows", { type: "geojson", data: { type: "FeatureCollection", features } });
+  if (!map.hasImage("wind-arrow-icon")) {
+    map.addImage("wind-arrow-icon", createArrowIcon(28), { sdf: true });
+  }
+  map.addLayer({
+    id: "wind-arrow-layer",
+    type: "symbol",
+    source: "wind-arrows",
+    layout: {
+      "icon-image": "wind-arrow-icon",
+      "icon-size": ["interpolate", ["linear"], ["get", "speed"], 2, 0.4, 16, 0.9],
+      "icon-rotate": ["get", "dir"],
+      "icon-rotation-alignment": "map",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
+      visibility: "none",
+    },
+    paint: { "icon-color": "#e5edf7", "icon-opacity": 0.9 },
+  });
+}
+
+function applyVariableVisibility(varId) {
+  ["temperature", "humidity", "wind_speed"].forEach(id => {
+    if (map.getLayer("layer-" + id)) {
+      map.setLayoutProperty("layer-" + id, "visibility", id === varId ? "visible" : "none");
+    }
+  });
+  if (map.getLayer("wind-arrow-layer")) {
+    map.setLayoutProperty("wind-arrow-layer", "visibility", varId === "wind_speed" ? "visible" : "none");
+  }
+}
+
+async function setActiveVariable(varId) {
+  activeVar = varId;
+  const scaleEl = document.getElementById("var-legend-scale");
+  const labelEl = document.getElementById("var-label");
+  const minEl = document.getElementById("var-min");
+  const maxEl = document.getElementById("var-max");
+  if (varId === "none") {
+    applyVariableVisibility(varId);
+    scaleEl.style.background = "#1f2937";
+    labelEl.textContent = "select a variable";
+    minEl.textContent = "—"; maxEl.textContent = "—";
+    return;
+  }
+  // load first — the layers don't exist until this resolves, so setting
+  // visibility before this would silently no-op on first selection
+  await ensureWeatherLayersLoaded();
+  if (varId === "wind_speed") await ensureWindLayerLoaded();
+  applyVariableVisibility(varId);
+  const meta = weatherLayersData[varId];
+  const stops = VAR_COLOR_STOPS[varId];
+  scaleEl.style.background = `linear-gradient(90deg, ${stops.join(",")})`;
+  labelEl.textContent = meta.label;
+  minEl.textContent = meta.vmin + meta.unit;
+  maxEl.textContent = meta.vmax + meta.unit;
+}
+
+document.querySelectorAll(".var-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".var-btn").forEach(b => b.classList.toggle("active", b === btn));
+    setActiveVariable(btn.dataset.var).catch(() => {});
+  });
+});
+
+// ---- region inspection: click map -> dashed box + zoom + future time-scale panel ----
+const REGION_HALF_DEG = 0.15;
+let selectedRegion = null; // { lat, lon }
+let regionTrendCache = null;
+
+function regionBoxPolygon(lat, lon) {
+  const d = REGION_HALF_DEG;
+  const coords = [
+    [lon - d, lat + d], [lon + d, lat + d], [lon + d, lat - d], [lon - d, lat - d], [lon - d, lat + d],
+  ];
+  return { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Polygon", coordinates: [coords] }, properties: {} }] };
+}
+
+function windCompass(deg) {
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
+async function selectRegion(lat, lon) {
+  selectedRegion = { lat, lon };
+  regionTrendCache = null;
+  map.getSource("region-box").setData(regionBoxPolygon(lat, lon));
+  map.flyTo({ center: [lon, lat], zoom: Math.min(map.getZoom() + 1.6, 13), duration: 800 });
+
+  document.getElementById("region-card").classList.add("show");
+  document.getElementById("region-hint").style.display = "none";
+  document.getElementById("region-coords").textContent = `${lat.toFixed(3)}°N, ${lon.toFixed(3)}°E`;
+  document.getElementById("region-slider").value = 0;
+  document.getElementById("region-slider-value").textContent = "Now";
+
+  await refreshRegionReading(0);
+  await loadRegionTrend();
+}
+
+async function refreshRegionReading(leadMin) {
+  if (!selectedRegion) return;
+  const { lat, lon } = selectedRegion;
+  const d = await fetchJSON(`/region-forecast?lat=${lat}&lon=${lon}&lead_time=${leadMin}`);
+  document.getElementById("region-temp").textContent = `${d.temperature_c}°C`;
+  document.getElementById("region-humidity").textContent = `${d.humidity_pct}%`;
+  document.getElementById("region-wind").textContent = `${d.wind_speed_ms} m/s ${windCompass(d.wind_dir_deg)}`;
+  document.getElementById("region-cloudburst").textContent =
+    d.cloudburst_rainrate_mm_hr === null ? "n/a (outside storm grid)" : `${d.cloudburst_rainrate_mm_hr} mm/hr`;
+}
+
+async function loadRegionTrend() {
+  if (!selectedRegion) return;
+  const { lat, lon } = selectedRegion;
+  const leadSteps = [0, 60, 120, 180, 240, 300, 360];
+  const readings = await Promise.all(
+    leadSteps.map(m => fetchJSON(`/region-forecast?lat=${lat}&lon=${lon}&lead_time=${m}`))
+  );
+  regionTrendCache = readings;
+  const el = document.getElementById("region-trend");
+  const temps = readings.map(r => r.temperature_c);
+  const tMin = Math.min(...temps), tMax = Math.max(...temps, tMin + 1);
+  el.innerHTML = readings.map(r => {
+    const h = 6 + ((r.temperature_c - tMin) / (tMax - tMin)) * 24;
+    const color = lerpColor(VAR_COLOR_STOPS.temperature, (r.temperature_c - 18) / (34 - 18));
+    return `<div class="bar" style="height:${h}px; background:${color}" title="+${r.lead_minutes}min: ${r.temperature_c}°C"></div>`;
+  }).join("");
+}
+
+document.getElementById("region-slider").addEventListener("input", (e) => {
+  const m = parseInt(e.target.value, 10);
+  document.getElementById("region-slider-value").textContent = m === 0 ? "Now" : `+${Math.floor(m / 60)}h ${m % 60}m`;
+  refreshRegionReading(m).catch(() => {});
+});
+
+document.getElementById("region-close").addEventListener("click", () => {
+  selectedRegion = null;
+  document.getElementById("region-card").classList.remove("show");
+  document.getElementById("region-hint").style.display = "block";
+  if (map.getSource("region-box")) map.getSource("region-box").setData({ type: "FeatureCollection", features: [] });
+});
+
+map.on("load", () => {
+  ensureLayers();
+  map.on("click", (e) => {
+    const stationHit = map.queryRenderedFeatures(e.point, { layers: map.getLayer("station-dot") ? ["station-dot"] : [] });
+    if (stationHit.length) return; // station click handler already deals with this
+    selectRegion(e.lngLat.lat, e.lngLat.lng).catch(() => {});
+  });
+});
 
 let leadMinutes = 0;
 let lastHazardGeojson = null;

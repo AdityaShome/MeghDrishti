@@ -26,6 +26,7 @@ from nowcast.models.hazard import classify_station, hail_cells, downburst_cells
 from nowcast.models.eta import storm_cells
 from nowcast.models.pysteps_baseline import run_forecast, cloudburst_cells
 from nowcast.processing.fusion import build_fused_frame
+from nowcast.processing import weather_fields
 
 app = FastAPI(title="MeghDrishti Nowcast API")
 app.add_middleware(
@@ -325,6 +326,70 @@ def raw_layers():
         },
     ]
     return {"layers": layers, "note": "synthetic sensors — no MOSDAC/IMD radar or satellite access yet"}
+
+
+@app.get("/weather-layers")
+def weather_layers():
+    """Temperature/humidity/wind-speed as colored map overlays across the
+    wide demo region (§WIDE_BBOX) — not just the narrow storm bbox used for
+    radar/satellite/hazards. Synthetic (see processing/weather_fields.py),
+    but spatially coherent with the storm's position."""
+    g = weather_fields.generate_grid()
+    layers = [
+        {
+            "id": "temperature",
+            "label": "Temperature",
+            "unit": "°C",
+            "bbox": g["bbox"],
+            "vmin": 18, "vmax": 34,
+            "image": _array_to_png_data_url(g["temperature_c"], "RdYlBu_r", vmin=18, vmax=34),
+        },
+        {
+            "id": "humidity",
+            "label": "Relative humidity",
+            "unit": "%",
+            "bbox": g["bbox"],
+            "vmin": 0, "vmax": 100,
+            "image": _array_to_png_data_url(g["humidity_pct"], "YlGnBu", vmin=0, vmax=100),
+        },
+        {
+            "id": "wind_speed",
+            "label": "Wind speed",
+            "unit": "m/s",
+            "bbox": g["bbox"],
+            "vmin": 0, "vmax": 18,
+            "image": _array_to_png_data_url(g["wind_speed_ms"], "plasma", vmin=0, vmax=18),
+        },
+    ]
+    return {"layers": layers, "note": "synthetic ambient fields — not an IMD/MOSDAC product"}
+
+
+@app.get("/wind-vectors")
+def wind_vectors():
+    """Sparse wind arrow points (speed + direction) for symbol rendering."""
+    return {"points": weather_fields.wind_vector_points()}
+
+
+@app.get("/region-forecast")
+def region_forecast(lat: float, lon: float, lead_time: int = Query(0, ge=0, le=360)):
+    """Point-sampled future trend for a user-selected region (temperature/
+    humidity/wind at a chosen lead time) — backs the dashboard's per-region
+    time-scale panel. Entirely synthetic (see weather_fields.py); if the
+    point falls inside the storm bbox, also includes the pySTEPS cloudburst
+    rain-rate forecast at the nearest lead step for that location."""
+    sample = weather_fields.sample_point(lat, lon, lead_time)
+
+    cloudburst_rainrate = None
+    fc = _refresh_forecast()
+    lon_min, lat_min, lon_max, lat_max = fc["bbox"]
+    if lon_min <= lon <= lon_max and lat_min <= lat <= lat_max:
+        n = fc["grid_size"]
+        xi = int(round((lon - lon_min) / (lon_max - lon_min) * (n - 1)))
+        yi = int(round((lat - lat_min) / (lat_max - lat_min) * (n - 1)))
+        idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
+        cloudburst_rainrate = round(float(fc["rainrate_forecast"][idx][yi, xi]), 1)
+
+    return {**sample, "lead_minutes": lead_time, "cloudburst_rainrate_mm_hr": cloudburst_rainrate}
 
 
 @app.get("/health")
