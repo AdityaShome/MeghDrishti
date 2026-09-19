@@ -4,6 +4,9 @@ Demo region default: Pune district, Maharashtra (good IMD AWS density,
 inside MOSDAC radar footprint). Change BBOX to retarget the whole pipeline.
 """
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # lon_min, lat_min, lon_max, lat_max — fine storm-scale grid (radar/satellite/
 # pySTEPS/DGMR/hazards). Kept small on purpose: these all run per-request or
@@ -25,6 +28,7 @@ IMD_DIR = os.path.join(DATA_DIR, "imd")
 # False = replay/mock mode (see fallback matrix, section 6 of project.md).
 USE_LIVE_IMD = os.getenv("USE_LIVE_IMD", "false").lower() == "true"
 IMD_API_KEY = os.getenv("IMD_API_KEY", "")
+TOMORROW_API_KEY = os.getenv("TOMORROW_API_KEY", "")
 
 # Hazard thresholds (section 4c of project.md) — documented here, not buried.
 HAIL_LIGHTNING_CAT_MIN = "cat17"       # IMD hail flag category
