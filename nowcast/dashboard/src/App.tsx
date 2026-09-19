@@ -14,6 +14,7 @@ import { useRegionClick } from "./map/useRegionClick";
 import { TopBar } from "./components/TopBar";
 import { Banner } from "./components/Banner";
 import { LeftNavigation } from "./components/LeftNavigation";
+import { HazardsPage } from "./components/HazardsPage";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { BottomPanel } from "./components/BottomPanel";
@@ -54,6 +55,7 @@ function Dashboard() {
   const [regionLeadMinutes, setRegionLeadMinutes] = useState(0);
   const [regionReading, setRegionReading] = useState<RegionForecast | null>(null);
   const [layersOpen, setLayersOpen] = useState(false);
+  const [hazardsOpen, setHazardsOpen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [apiUnreachable, setApiUnreachable] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -142,12 +144,29 @@ function Dashboard() {
 
   return (
     <div className="app-shell">
-      <LeftNavigation layersOpen={layersOpen} onToggleLayers={() => setLayersOpen((v) => !v)} />
+      <LeftNavigation
+        layersOpen={layersOpen}
+        onToggleLayers={() => setLayersOpen((v) => !v)}
+        hazardsOpen={hazardsOpen}
+        onToggleHazards={() => setHazardsOpen((v) => !v)}
+      />
 
       <div className="app-content">
         <TopBar apiOk={apiOk} lastUpdated={lastUpdated} />
 
         <div className="main-body">
+          {hazardsOpen && (
+            <HazardsPage
+              hazards={hazards.data ?? null}
+              stormCells={stormEta.data?.cells ?? null}
+              onClose={() => setHazardsOpen(false)}
+              onSelectLocation={(lat, lon) => {
+                setHazardsOpen(false);
+                selectRegion(lat, lon);
+              }}
+            />
+          )}
+
           <LeftSidebar hazards={hazards.data ?? null} model={model} apiOk={apiOk} lastUpdated={lastUpdated} />
 
           <div className="map-area">
