@@ -27,6 +27,11 @@ Opens at `http://localhost:5173`. Requires the backend running at
   station markers, the region-selection box, wind arrows).
 - `src/components/` — presentational UI (cards, panels, the region trend
   chart).
+- `src/lib/mosdacLayers.ts` — real ISRO/MOSDAC/Bhuvan WMS layer catalog (16
+  overlays + 7 base layers), reverse-engineered from MOSDAC's own live
+  CloudBurst DSS. See the file's header comment for provenance/verification
+  notes before adding or changing any entry — every layer name here was
+  confirmed against the live server, not guessed.
 
 ## Superseded
 

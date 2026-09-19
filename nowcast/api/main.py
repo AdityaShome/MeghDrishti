@@ -15,7 +15,8 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from fastapi import FastAPI, Query
+import requests
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from nowcast.configs.settings import IMD_DIR, INGEST_CYCLE_MINUTES, CLOUDBURST_RAIN_RATE_MM_HR
@@ -390,6 +391,32 @@ def region_forecast(lat: float, lon: float, lead_time: int = Query(0, ge=0, le=3
         cloudburst_rainrate = round(float(fc["rainrate_forecast"][idx][yi, xi]), 1)
 
     return {**sample, "lead_minutes": lead_time, "cloudburst_rainrate_mm_hr": cloudburst_rainrate}
+
+
+_BHUVAN_WMS = "https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms/"
+
+
+@app.get("/wms-proxy/bhuvan")
+def wms_proxy_bhuvan(request: Request):
+    """Thin passthrough proxy for Bhuvan's WMS ("Bhuvan Maps" base layer).
+
+    Bhuvan's server doesn't send CORS headers, so a browser can't fetch its
+    tiles directly (confirmed via direct testing — curl gets 200, browser
+    fetch gets blocked by CORS). The target host is hardcoded, not taken
+    from the request, so this can't be used as an open SSRF proxy — it only
+    ever forwards to Bhuvan's WMS with whatever WMS query params the caller
+    sent (layers/bbox/etc.), which is exactly what a legitimate map tile
+    request looks like.
+    """
+    try:
+        upstream = requests.get(_BHUVAN_WMS, params=dict(request.query_params), timeout=10)
+    except requests.RequestException as exc:
+        return Response(content=str(exc), status_code=502, media_type="text/plain")
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("Content-Type", "image/png"),
+    )
 
 
 @app.get("/health")

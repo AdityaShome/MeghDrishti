@@ -6,12 +6,13 @@ lightning data on a GIS dashboard with storm-arrival countdowns.
 
 ## Data sources: real vs. synthetic
 
-**Everything in this build is synthetic.** No MOSDAC or IMD API credentials have been
-granted yet (registration is the single longest-lead-time item and hasn't been completed
-by the team) — see `README.md` for exact next steps. Every ingestion module
-(`nowcast/ingestion/*.py`) is written with a `_fetch_live()` stub matching the documented
-real API/schema, and a clearly-labeled mock generator as the current active path
-(`USE_LIVE_IMD` / `USE_LIVE_SATELLITE` / `USE_LIVE_RADAR` env flags, all default `false`).
+**All hazard/nowcast data (hail, downburst, cloudburst, lightning, radar, satellite) is
+synthetic.** No MOSDAC or IMD nowcast API credentials have been granted yet (registration
+is the single longest-lead-time item and hasn't been completed by the team) — see
+`README.md` for exact next steps. Every ingestion module (`nowcast/ingestion/*.py`) is
+written with a `_fetch_live()` stub matching the documented real API/schema, and a
+clearly-labeled mock generator as the current active path (`USE_LIVE_IMD` /
+`USE_LIVE_SATELLITE` / `USE_LIVE_RADAR` env flags, all default `false`).
 
 | Layer | Real source (planned) | Current source | Notes |
 |---|---|---|---|
@@ -19,7 +20,17 @@ real API/schema, and a clearly-labeled mock generator as the current active path
 | Satellite IR/WV/MWIR | INSAT-3D/3DR via MOSDAC (`mdapi.py`) | Synthetic Gaussian cold-cloud-top field | Same storm, correlated cold top |
 | Radar reflectivity + velocity | MOSDAC volumetric DWR (TERLS/SHAR) via `pyiwr`/Py-ART | Synthetic moving Gaussian cell + velocity couplet | No PNG-inversion shortcut taken |
 
-All three mock generators share one canonical storm trajectory
+**The map's GIS base/overlay layers are real, not synthetic.** 16 overlay layers (LULC,
+basins, drainage, landslide/fire risk, rivers, roads, railways, airports, admin/taluka
+boundaries, district population) and 7 base layers (Bhuvan Maps, OSM, DEM, LULC, Natural
+Earth, Black/True Marble) are genuine ISRO/NRSC/MOSDAC WMS data, sourced by driving
+MOSDAC's own live CloudBurst DSS (`mosdac.gov.in/cloudburst/`) with a real browser and
+capturing each layer's actual WMS request — see `nowcast/dashboard/src/lib/mosdacLayers.ts`
+for the full catalog and provenance notes. Bhuvan's WMS server doesn't send CORS headers,
+so it's routed through a small passthrough proxy on our own backend (`/wms-proxy/bhuvan`
+in `nowcast/api/main.py`) rather than fetched directly from the browser.
+
+All three synthetic mock generators share one canonical storm trajectory
 (`nowcast/processing/storm_track.py`), so the fake sensors agree on where the storm is —
 this was deliberately built (and one timing bug caught via live browser verification and
 fixed) so the demo reads as one coherent storm, not disconnected synthetic layers.
@@ -83,8 +94,11 @@ All items below are demoable, using synthetic data throughout (see table above):
 - [x] Storm-arrival countdown clock, ETA derived from real pySTEPS motion estimation
 - [x] This write-up
 
-**Stretch goal achieved**: DGMR (real pretrained deep model) alongside pySTEPS with a
-comparison toggle — see Model choices above for the calibration caveat.
+**Stretch goals achieved**:
+- DGMR (real pretrained deep model) alongside pySTEPS with a comparison toggle — see
+  Model choices above for the calibration caveat.
+- Real ISRO/MOSDAC/Bhuvan GIS base and overlay layers (23 total) — not part of the
+  original plan, added directly from a real source the user pointed to.
 
 **Not done**: multi-region coverage, historical validation against Bhuvan LDSN,
-SmaAt-UNet fine-tuning. Out of scope until real data access exists.
+SmaAt-UNet fine-tuning. Out of scope until real hazard-data access exists.

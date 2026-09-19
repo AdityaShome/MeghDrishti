@@ -7,6 +7,8 @@ import { WeatherRasterLayers } from "./map/layers/WeatherRasterLayers";
 import { WindArrows } from "./map/layers/WindArrows";
 import { ModelFrameLayer } from "./map/layers/ModelFrameLayer";
 import { RegionBox } from "./map/layers/RegionBox";
+import { WmsBaseLayer } from "./map/layers/WmsBaseLayer";
+import { WmsOverlayLayers } from "./map/layers/WmsOverlayLayers";
 import { useRegionClick } from "./map/useRegionClick";
 
 import { TopBar } from "./components/TopBar";
@@ -18,6 +20,8 @@ import { ModelCard } from "./components/ModelCard";
 import { WeatherVariablesCard } from "./components/WeatherVariablesCard";
 import { RegionCard } from "./components/RegionCard";
 import { TimelineCard } from "./components/TimelineCard";
+import { BaseMapCard } from "./components/BaseMapCard";
+import { GisOverlaysCard } from "./components/GisOverlaysCard";
 
 import { api, API_BASE } from "./api";
 import { useHazards, useStormEta, useRawLayers, useForecastSummary, useNowcastFrame, useLazyWeatherLayers, useLazyWindVectors } from "./hooks/useNowcastData";
@@ -35,6 +39,8 @@ function Dashboard() {
   const [radarVisible, setRadarVisible] = useState(true);
   const [modelFrameVisible, setModelFrameVisible] = useState(true);
   const [activeVar, setActiveVar] = useState<VarId>("none");
+  const [baseMapId, setBaseMapId] = useState("none");
+  const [activeOverlayIds, setActiveOverlayIds] = useState<Set<string>>(new Set());
   const [region, setRegion] = useState<{ lat: number; lon: number } | null>(null);
   const [regionLeadMinutes, setRegionLeadMinutes] = useState(0);
   const [regionReading, setRegionReading] = useState<RegionForecast | null>(null);
@@ -99,6 +105,15 @@ function Dashboard() {
     map?.flyTo({ center: [cell.lon, cell.lat], zoom: 12, duration: 700 });
   }
 
+  function toggleOverlay(id: string) {
+    setActiveOverlayIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const activeMeta = activeVar !== "none" ? weatherLayers.data?.layers.find((l) => l.id === activeVar) ?? null : null;
   const dgmrUnavailable = forecastSummary.data?.available === false;
   const banner = tileError ?? (apiUnreachable ? `Can't reach the backend at ${API_BASE} — start it with: uvicorn nowcast.api.main:app --port 8000` : null);
@@ -116,6 +131,8 @@ function Dashboard() {
         modelFrame={nowcastFrame.data ?? null}
         modelFrameVisible={modelFrameVisible}
         region={region}
+        baseMapId={baseMapId}
+        activeOverlayIds={activeOverlayIds}
       />
 
       <TopBar />
@@ -136,6 +153,8 @@ function Dashboard() {
           dgmrUnavailable={dgmrUnavailable}
         />
         <WeatherVariablesCard activeVar={activeVar} onChange={setActiveVar} meta={activeMeta} />
+        <BaseMapCard selectedId={baseMapId} onChange={setBaseMapId} />
+        <GisOverlaysCard activeIds={activeOverlayIds} onToggle={toggleOverlay} />
         <RegionCard
           region={region}
           reading={regionReading}
@@ -171,10 +190,14 @@ function MapLayers(props: {
   modelFrame: NowcastFrame | null;
   modelFrameVisible: boolean;
   region: { lat: number; lon: number } | null;
+  baseMapId: string;
+  activeOverlayIds: Set<string>;
 }) {
   return (
     <>
+      <WmsBaseLayer selectedId={props.baseMapId} />
       <HazardLayers hazards={props.hazards} />
+      <WmsOverlayLayers activeIds={props.activeOverlayIds} />
       <SensorRasterLayers layers={props.rawLayers} satelliteVisible={props.satelliteVisible} radarVisible={props.radarVisible} />
       <WeatherRasterLayers layers={props.weatherLayers} activeVar={props.activeVar} />
       <WindArrows points={props.windPoints} visible={props.activeVar === "wind_speed"} />

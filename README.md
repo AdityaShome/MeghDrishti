@@ -4,13 +4,14 @@ Convective-scale nowcasting system (SIH 2026) — 0-6h thunderstorm/hail/downbur
 nowcasting fusing IMD radar, INSAT satellite, and lightning data on a GIS dashboard.
 Full plan: [`project.md`](project.md). One-page write-up: [`WRITEUP.md`](WRITEUP.md).
 
-## Current status — Definition of Done (§8) satisfied, entirely on synthetic data
+## Current status — Definition of Done (§8) satisfied
 
-No MOSDAC or IMD API credentials exist yet (see Next steps) — **every data source below
-is synthetic**, clearly labeled as such in code and in the dashboard itself. All three
-mock generators (IMD, satellite, radar) share one canonical fake storm trajectory
-(`nowcast/processing/storm_track.py`) so they agree with each other, and every ingestion
-module has a `_fetch_live()` stub with the real API's schema ready to fill in.
+No MOSDAC or IMD *nowcast API* credentials exist yet (see Next steps) — **all hazard/
+storm data below is synthetic**, clearly labeled as such in code and in the dashboard
+itself. All three mock generators (IMD, satellite, radar) share one canonical fake storm
+trajectory (`nowcast/processing/storm_track.py`) so they agree with each other, and every
+ingestion module has a `_fetch_live()` stub with the real API's schema ready to fill in.
+The map's GIS base/overlay layers, however, **are real** — see below.
 
 - **Ingestion (2a/2b/2c)**: `nowcast/ingestion/{imd_nowcast,satellite_insat,radar_puller}.py`
   — mock IMD nowcast JSON, synthetic INSAT-like TIR1/WV/MWIR, synthetic radar
@@ -42,8 +43,17 @@ module has a `_fetch_live()` stub with the real API's schema ready to fill in.
   `/storm-eta`, `/forecast?model=pysteps|dgmr`, `/nowcast-frame?model=...&lead_time=...`
   (single-frame PNG for the model comparison toggle), `/raw-layers` (satellite IR + radar
   reflectivity as real PNG image overlays), `/health`.
+- **Real GIS layers** (`nowcast/dashboard/src/lib/mosdacLayers.ts`): 16 overlay layers
+  (LULC, basins, drainage, landslide/fire risk, rivers, roads, railways, airports,
+  admin/taluka boundaries, district population) and 7 base layers (Bhuvan Maps, OSM, DEM,
+  LULC, Natural Earth, Black/True Marble) — genuine ISRO/NRSC/MOSDAC WMS data. Sourced by
+  driving MOSDAC's live CloudBurst DSS (`mosdac.gov.in/cloudburst/`) with a real browser
+  and capturing each layer's actual WMS request; every layer verified with a direct
+  GetMap request returning HTTP 200 + a real image before being wired in. Bhuvan's WMS
+  has no CORS headers, so it's routed through `/wms-proxy/bhuvan` on our own backend.
 - **Dashboard** (`nowcast/dashboard/`, React + TypeScript + Vite — see its own README):
-  real basemap (Esri dark-gray canvas, no API key needed), heatmap-based hazard rendering
+  real basemap (Esri dark-gray canvas, no API key needed) with the real GIS layers above
+  selectable as alternate base maps or toggleable overlays, heatmap-based hazard rendering
   (not stacked point markers), station markers with popups, a pySTEPS/DGMR model-comparison
   toggle, temperature/humidity/wind overlays across a wider region, click-to-inspect a
   region (dashed selection box, zoom, and a user-controlled 0-6h future-trend panel with
@@ -51,8 +61,8 @@ module has a `_fetch_live()` stub with the real API's schema ready to fill in.
   HTML/JS version is kept at `nowcast/dashboard/legacy/index.html` for reference but is
   no longer maintained. Verified with a headless-browser pass (Playwright) — see below.
 
-Not built: real satellite/radar access (blocked on §1 registration), SmaAt-UNet fine-tuning
-(the plan's Option B for 4b — DGMR zero-shot, Option A, was built instead).
+Not built: real hazard/satellite/radar access (blocked on §1 registration), SmaAt-UNet
+fine-tuning (the plan's Option B for 4b — DGMR zero-shot, Option A, was built instead).
 
 ## Run it
 
@@ -88,6 +98,10 @@ errors. Two real bugs were caught this way and fixed:
   `position: absolute` with its own `position: relative` on class-selector import-order —
   together these collapsed the map to zero height and silently ate every click. Fixed by
   moving the shell wrapper into `MapProvider` and setting position via inline style.
+- Bhuvan's WMS ("Bhuvan Maps" base layer) returned a real tile via `curl` but failed
+  silently in-browser — its server sends no CORS headers, so MapLibre's fetch-based tile
+  loader was blocked. Confirmed by checking the actual error text (not just "tiles didn't
+  load") and fixed with a same-origin backend proxy rather than dropping the layer.
 
 ## Next steps (in plan order)
 
