@@ -28,8 +28,19 @@ fixed) so the demo reads as one coherent storm, not disconnected synthetic layer
 
 - **pySTEPS (section 4a)**: Lucas-Kanade optical flow + semi-Lagrangian extrapolation on
   the synthetic reflectivity sequence, 0-6h at 10-min steps. This is the guaranteed-working
-  baseline per the plan; no deep model was attempted (time-boxed out as a stretch goal —
-  see `project.md` §4b).
+  baseline per the plan.
+- **DGMR (section 4b, stretch goal)**: DeepMind's pretrained Skillful Nowcasting GAN
+  (`openclimatefix/dgmr` on HuggingFace, via the `dgmr` PyPI package), run zero-shot — real
+  weights, no training, per the plan's "Option A: less work" path. Runs on CPU in
+  ~3-11s/forecast, cached per ingestion cycle. **Its output is not calibrated mm/hr** — the
+  model was trained on UK Met Office radar and we feed it synthetic input resized/normalized
+  with a simple linear transform, not the original training pipeline's calibration. Small
+  errors in an out-of-distribution input blow up enormously if run through the same
+  Marshall-Palmer Z-R relation pySTEPS uses (observed six-figure "mm/hr" values in testing),
+  so DGMR's output is deliberately kept as a unitless 0-1 relative intensity, shown only as
+  a visual comparison layer (`/nowcast-frame?model=dgmr`, dashboard "Nowcast model" toggle)
+  and never fed into the cloudburst hazard rule. This is the domain-shift limitation the
+  plan explicitly asks to disclose, not a hidden gap — see `nowcast/models/dgmr_nowcast.py`.
 - **Hazard rules are rule-based, not a trained classifier** — no labeled hail/downburst
   ground truth exists at hackathon timescale, and thresholds need to be explainable to
   judges. Thresholds (`nowcast/configs/settings.py`):
@@ -53,8 +64,10 @@ fixed) so the demo reads as one coherent storm, not disconnected synthetic layer
   ~50km across) after roughly 2 simulated hours; this is a real pySTEPS behavior on a
   genuinely moving storm, not an artifact, but it means the 6h forecast window is more
   illustrative than meaningful for this narrow demo region.
-- No deep-learning nowcast (DGMR/SmaAt-UNet) is running — pySTEPS-only, per the plan's
-  fallback-first guidance.
+- DGMR's forecast is not quantitatively meaningful for this input (see Model choices) —
+  it demonstrates that a real pretrained deep model integrates cleanly into the pipeline,
+  not that its output is trustworthy here. SmaAt-UNet fine-tuning (the plan's Option B)
+  was not attempted.
 - `/raw-layers` and hazard grid rules regenerate on each cache refresh from freshly-pulled
   mock files, not a persisted time series — there's no real "rolling buffer of actual
   observations" yet, only the in-memory fusion buffer scaffold.
@@ -70,6 +83,8 @@ All items below are demoable, using synthetic data throughout (see table above):
 - [x] Storm-arrival countdown clock, ETA derived from real pySTEPS motion estimation
 - [x] This write-up
 
-**Not done / stretch**: fine-tuned deep model comparison toggle, multi-region coverage,
-historical validation against Bhuvan LDSN. None attempted — out of scope until real data
-access exists.
+**Stretch goal achieved**: DGMR (real pretrained deep model) alongside pySTEPS with a
+comparison toggle — see Model choices above for the calibration caveat.
+
+**Not done**: multi-region coverage, historical validation against Bhuvan LDSN,
+SmaAt-UNet fine-tuning. Out of scope until real data access exists.

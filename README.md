@@ -33,15 +33,22 @@ module has a `_fetch_live()` stub with the real API's schema ready to fill in.
   - Lightning: IMD probability category thresholds.
 - **ETA/motion**: `nowcast/models/eta.py` — bearing/speed derived from the same pySTEPS
   Lucas-Kanade field, not a separate model.
+- **DGMR deep model (4b, stretch goal)**: `nowcast/models/dgmr_nowcast.py` — DeepMind's
+  pretrained Skillful Nowcasting GAN (`openclimatefix/dgmr`), real weights, run zero-shot
+  on CPU (~3-11s/forecast). Output is a documented unitless relative-intensity field, not
+  calibrated mm/hr (UK-radar domain shift on synthetic input) — see the module docstring
+  and `WRITEUP.md` for why, and why it's never fed into the cloudburst hazard rule.
 - **API**: `nowcast/api/main.py` — `/hazards` (lead-time aware, all 4 hazard types),
-  `/storm-eta`, `/forecast` (6h rain-rate summary), `/raw-layers` (satellite IR + radar
+  `/storm-eta`, `/forecast?model=pysteps|dgmr`, `/nowcast-frame?model=...&lead_time=...`
+  (single-frame PNG for the model comparison toggle), `/raw-layers` (satellite IR + radar
   reflectivity as real PNG image overlays), `/health`.
-- **Dashboard**: `nowcast/dashboard/index.html` — hazard layer (color-coded by type),
-  satellite/radar image overlay toggles, live countdown clocks, 0-6h lead-time slider,
-  legend. Verified with a headless-browser pass (Playwright) — see below.
+- **Dashboard**: `nowcast/dashboard/index.html` — real basemap (Esri dark-gray canvas, no
+  API key needed), heatmap-based hazard rendering (not stacked point markers), station
+  markers with popups, a pySTEPS/DGMR model-comparison toggle, live countdown clocks,
+  lead-time slider, legend. Verified with a headless-browser pass (Playwright) — see below.
 
-Not built: real satellite/radar access (blocked on §1 registration), deep model (4b,
-stretch goal, intentionally skipped per the plan's fallback-first guidance).
+Not built: real satellite/radar access (blocked on §1 registration), SmaAt-UNet fine-tuning
+(the plan's Option B for 4b — DGMR zero-shot, Option A, was built instead).
 
 ## Run it
 
@@ -73,5 +80,5 @@ label by ~50 minutes — see the fix commit for detail.
    once access is granted — swap-in points are marked, schemas already match.
 3. Once real radar CAPPI grids exist, downburst/hail thresholds should be re-validated
    against them — the current thresholds are textbook values, never checked against data.
-4. Stretch: fine-tuned deep model (SmaAt-UNet/DGMR) alongside pySTEPS with a comparison
-   toggle (4b); multi-region coverage; historical validation against Bhuvan LDSN.
+4. Remaining stretch goals: multi-region coverage; historical validation against Bhuvan
+   LDSN; SmaAt-UNet fine-tuning as a second deep-model comparison alongside DGMR.
