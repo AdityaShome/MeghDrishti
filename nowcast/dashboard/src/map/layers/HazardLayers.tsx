@@ -18,7 +18,15 @@ const EMPTY_FC = { type: "FeatureCollection" as const, features: [] as HazardFea
  * circles for a single storm reads as fake; a heatmap reads like a real
  * radar/hazard product. Station-level hazards (lightning, point hail flags)
  * are genuinely discrete points, so those stay as clickable circle markers. */
-export function HazardLayers({ hazards }: { hazards: HazardsResponse | null }) {
+export function HazardLayers({
+  hazards,
+  heatmapsVisible = true,
+  stationsVisible = true,
+}: {
+  hazards: HazardsResponse | null;
+  heatmapsVisible?: boolean;
+  stationsVisible?: boolean;
+}) {
   const { map, ready } = useMeghMap();
   const popupRef = useRef<Popup | null>(null);
 
@@ -123,6 +131,21 @@ export function HazardLayers({ hazards }: { hazards: HazardsResponse | null }) {
       });
     }
   }, [map, ready, hazards]);
+
+  useEffect(() => {
+    if (!map) return;
+    for (const spec of HEAT_SPECS) {
+      const id = `heat-${spec.id}`;
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", heatmapsVisible ? "visible" : "none");
+    }
+  }, [map, heatmapsVisible]);
+
+  useEffect(() => {
+    if (!map) return;
+    for (const id of ["station-glow", "station-dot"]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", stationsVisible ? "visible" : "none");
+    }
+  }, [map, stationsVisible]);
 
   return null;
 }

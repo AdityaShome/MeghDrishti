@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Map as MaplibreMap, NavigationControl, type ErrorEvent, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { MapContext } from "./MapContext";
+import { MapContext, useMeghMap } from "./MapContext";
 
-export { useMeghMap } from "./MapContext";
+export { useMeghMap };
 
 const STYLE: StyleSpecification = {
   version: 8,
@@ -26,34 +26,38 @@ const STYLE: StyleSpecification = {
   ],
 };
 
+/** MapProvider renders no DOM of its own — it only owns the MapLibre
+ * instance and hands out context. The actual map container is rendered by
+ * <MapCanvas/>, which the app places wherever the map should visually live
+ * (e.g. inside .map-area). Keeping these separate matters: an earlier
+ * version had MapProvider render its own full-page wrapper div, which the
+ * app's own layout then nested a second, unrelated wrapper inside — the
+ * app's non-positioned flex content ended up stacking (and catching clicks)
+ * above the absolutely-positioned map canvas, silently swallowing every
+ * map click. Letting the caller control exactly where <MapCanvas/> sits
+ * avoids that class of bug entirely. */
 export function MapProvider({ children }: { children: ReactNode }) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MaplibreMap | null>(null);
+  const [map, setMap] = useState<MaplibreMap | null>(null);
   const [ready, setReady] = useState(false);
   const [tileError, setTileError] = useState<string | null>(null);
-  const [, forceRender] = useState(0);
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+  const attachContainer = useCallback((el: HTMLDivElement | null) => {
+    if (!el || mapRef.current) return;
 
-    const map = new MaplibreMap({
-      container: containerRef.current,
+    const instance = new MaplibreMap({
+      container: el,
       style: STYLE,
       center: [73.86, 18.5],
       zoom: 10.2,
     });
-    mapRef.current = map;
-    map.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
+    mapRef.current = instance;
+    instance.addControl(new NavigationControl({ showCompass: false }), "bottom-right");
 
-    map.on("load", () => {
-      // reference labels (roads/place names) sit above data layers, added after
-      // everything else in the app registers its own layers via useEffect order
-      setReady(true);
-      forceRender((n) => n + 1);
-    });
+    instance.on("load", () => setReady(true));
 
     let errorShown = false;
-    map.on("error", (e: ErrorEvent) => {
+    instance.on("error", (e: ErrorEvent) => {
       if (errorShown) return;
       errorShown = true;
       const message = (e.error && (e.error.message || e.error.toString())) || "unknown error";
@@ -61,23 +65,25 @@ export function MapProvider({ children }: { children: ReactNode }) {
       setTileError(`Basemap tiles failed to load (network/firewall may be blocking arcgisonline.com): ${message}`);
     });
 
+    setMap(instance);
+  }, []);
+
+  useEffect(() => {
     return () => {
-      map.remove();
+      mapRef.current?.remove();
       mapRef.current = null;
     };
   }, []);
 
   return (
-    <MapContext.Provider value={{ map: mapRef.current, ready, tileError }}>
-      <div className="app-shell">
-        {/* inline position/inset: maplibre-gl's own stylesheet sets
-            `.maplibregl-map { position: relative }` on this same element
-            (it adds that class itself), which otherwise wins over the
-            `.map-root` class rule on import-order tie — inline styles beat
-            any external stylesheet regardless of specificity/order. */}
-        <div ref={containerRef} className="map-root" style={{ position: "absolute", inset: 0 }} />
-        {children}
-      </div>
-    </MapContext.Provider>
+    <MapContext.Provider value={{ map, ready, tileError, attachContainer }}>{children}</MapContext.Provider>
   );
+}
+
+/** Renders the actual map canvas. Place exactly where the map should fill
+ * — its parent must be `position: relative` (or similar) since this fills
+ * it via `position: absolute; inset: 0`. */
+export function MapCanvas() {
+  const { attachContainer } = useMeghMap();
+  return <div ref={attachContainer} className="map-root" style={{ position: "absolute", inset: 0 }} />;
 }

@@ -5,9 +5,15 @@ export interface MapContextValue {
   map: MaplibreMap | null;
   ready: boolean;
   tileError: string | null;
+  attachContainer: (el: HTMLDivElement | null) => void;
 }
 
-export const MapContext = createContext<MapContextValue>({ map: null, ready: false, tileError: null });
+export const MapContext = createContext<MapContextValue>({
+  map: null,
+  ready: false,
+  tileError: null,
+  attachContainer: () => {},
+});
 
 export function useMeghMap() {
   return useContext(MapContext);
