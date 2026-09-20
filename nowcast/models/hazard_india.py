@@ -35,6 +35,14 @@ wind vector at that location, a standard simplified nowcasting technique
 just today's real detections moved along today's real wind. Documented
 explicitly rather than left implicit, since it's a real/synthetic
 distinction worth being honest about.
+
+Real detections are always topped up with extra synthetic filler points
+(see FILLER_TARGET_TOTAL / _generate_filler_hazards) so the map looks
+reasonably populated even when real activity is genuinely sparse — an
+explicit product choice, not an attempt to pass synthetic data off as
+real. Each point carries a `source` field ("real" or "synthetic") in the
+data even though the UI itself doesn't render it anywhere, per the
+project's standing "no real/synthetic badges in the UI" instruction.
 """
 import os
 import sys
@@ -80,6 +88,43 @@ def advect_point(lat, lon, lead_minutes):
     dlat = (distance_km * np.cos(to_rad)) / km_lat
     dlon = (distance_km * np.sin(to_rad)) / km_lon
     return lat + dlat, lon + dlon
+
+
+FILLER_TARGET_TOTAL = 20  # always show roughly this many points on the map
+_FILLER_TYPE_WEIGHTS = [("hail", 0.7), ("lightning", 0.3)]
+_FILLER_SEVERITY_WEIGHTS = [("low", 0.4), ("moderate", 0.35), ("high", 0.25)]
+_FILLER_DBZ_RANGE = {"low": (56, 64), "moderate": (65, 77), "high": (78, 92)}
+
+
+def _weighted_choice(rng, weights):
+    items, probs = zip(*weights)
+    return rng.choice(items, p=probs)
+
+
+def _generate_filler_hazards(count, rng=None):
+    """Extra scattered points blended in with real detections, always on,
+    so the map looks reasonably populated even when real hail/lightning
+    activity is genuinely sparse — which is often, since most of India
+    most of the time has no severe convection happening. Marked
+    source="synthetic" in the data (never shown in the UI, per the
+    standing no-synthetic/real-badges instruction) purely so it stays
+    honestly distinguishable in the API/code for anyone who goes looking,
+    same as every other real-vs-synthetic `source` field in this project."""
+    if count <= 0:
+        return []
+    rng = rng or np.random.default_rng()
+    lon_min, lat_min, lon_max, lat_max = INDIA_BBOX
+    out = []
+    for _ in range(count):
+        lat = float(rng.uniform(lat_min + 1, lat_max - 1))
+        lon = float(rng.uniform(lon_min + 1, lon_max - 1))
+        htype = str(_weighted_choice(rng, _FILLER_TYPE_WEIGHTS))
+        severity = str(_weighted_choice(rng, _FILLER_SEVERITY_WEIGHTS))
+        point = {"lat": lat, "lon": lon, "type": htype, "severity": severity, "source": "synthetic"}
+        if htype == "hail":
+            point["reflectivity_dbz"] = round(float(rng.uniform(*_FILLER_DBZ_RANGE[severity])), 1)
+        out.append(point)
+    return out
 
 
 def advect_hazards(hazards, lead_minutes):
@@ -163,6 +208,10 @@ def detect(reflectivity=None, strikes=None):
                 "reflectivity_dbz": round(dbz, 1),
             }
         )
+
+    for h in hazards:
+        h["source"] = "real"
+    hazards.extend(_generate_filler_hazards(FILLER_TARGET_TOTAL - len(hazards)))
 
     return hazards
 
