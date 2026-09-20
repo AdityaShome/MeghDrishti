@@ -1,13 +1,19 @@
 """Radar puller (section 2c of project.md).
 
-Real path: MOSDAC volumetric DWR datasets (TERLS/SHAR) parsed with `pyiwr`
--> Py-ART -> CAPPI grid, for regions with MOSDAC radar coverage. Where
-there's no coverage, the plan's fallback is the public PNG radar overlay
-(mausam.imd.gov.in) as a visual-only layer — NOT inverted to quantitative
-reflectivity. This mode is not that: it's synthetic, standing in for a
-real CAPPI grid until MOSDAC radar access exists, so pySTEPS (4a) and the
-downburst rule (4c, needs radial velocity — not derivable from a PNG) have
-something to run on. Document which mode is active in the demo write-up.
+Original plan: MOSDAC volumetric DWR datasets (TERLS/SHAR) parsed with
+`pyiwr` -> Py-ART -> CAPPI grid. MOSDAC access is still under review, so
+`USE_LIVE_RADAR=true` instead pulls real quantitative reflectivity from
+RainViewer (`nowcast/ingestion/rainviewer_radar.py`) — free, unauthenticated,
+and its India coverage is itself built from IMD's public radar network, just
+republished by a third party instead of pulled from MOSDAC directly. See
+that module's docstring for the greyscale-to-dBZ decode.
+
+Radial (Doppler) velocity has no public aggregator equivalent — it needs a
+raw volumetric scan, which nothing but MOSDAC/IMD exposes — so `velocity_ms`
+stays synthetic even with `USE_LIVE_RADAR=true`. This means the downburst
+hazard rule (needs a real velocity couplet) never becomes "real" this way,
+only hail/cloudburst (reflectivity-based) do. Falls back to fully synthetic
+on any RainViewer fetch failure.
 
 Writes CAPPI-like output to data/radar/<ts>.npz with keys: reflectivity_dbz,
 velocity_ms, bbox, timestamp.
@@ -28,10 +34,11 @@ USE_LIVE_RADAR = os.getenv("USE_LIVE_RADAR", "false").lower() == "true"
 
 
 def _fetch_live():
-    raise NotImplementedError(
-        "Set USE_LIVE_RADAR=true only after implementing pyiwr/Py-ART CAPPI ingestion "
-        "for a MOSDAC-covered region"
-    )
+    from nowcast.ingestion.rainviewer_radar import fetch_reflectivity
+
+    reflectivity = fetch_reflectivity(grid_size=64)
+    velocity = generate_velocity_frame(t_min=0)  # no real Doppler source available
+    return reflectivity, velocity
 
 
 def _fetch_mock():

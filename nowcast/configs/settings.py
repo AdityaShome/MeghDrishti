@@ -37,6 +37,19 @@ TOMORROW_API_KEY = os.getenv("TOMORROW_API_KEY", "")
 # every distinct forecast step requested, so it's not on by default.
 USE_LIVE_ECMWF = os.getenv("USE_LIVE_ECMWF", "false").lower() == "true"
 
+# RainViewer radar reflectivity — real, quantitative dBZ, no API key needed.
+# India coverage is IMD's public radar network, republished by RainViewer.
+# Radial (Doppler) velocity has no public equivalent and stays synthetic
+# even with this on — see nowcast/ingestion/rainviewer_radar.py.
+USE_LIVE_RADAR = os.getenv("USE_LIVE_RADAR", "false").lower() == "true"
+
+# Blitzortung.org real lightning strikes — free community VLF network, no
+# API key needed, fills the gap neither the IMD feed nor Tomorrow.io cover
+# (Tomorrow.io's realtime endpoint has no lightning field at all). Independent
+# of USE_LIVE_IMD: applies on top of whichever station-data source is active.
+# See nowcast/ingestion/blitzortung_lightning.py.
+USE_LIVE_LIGHTNING = os.getenv("USE_LIVE_LIGHTNING", "false").lower() == "true"
+
 # Hazard thresholds (section 4c of project.md) — documented here, not buried.
 HAIL_LIGHTNING_CAT_MIN = "cat17"       # IMD hail flag category
 CLOUDBURST_RAIN_RATE_MM_HR = 15.0      # IMD "very heavy rain" threshold

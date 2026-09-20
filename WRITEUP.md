@@ -28,13 +28,31 @@ automatically on any fetch failure:
   weeks-to-months scale and useless for nowcasting, so this uses their newer unauthenticated
   Open Data service instead — real 0.25° HRES temperature/dewpoint/wind, updated 4x/day,
   CC-BY-4.0 licensed (attribution: ECMWF).
+- **Radar reflectivity** (`nowcast/ingestion/radar_puller.py`): real via RainViewer
+  (`USE_LIVE_RADAR=true`, no API key needed — see `nowcast/ingestion/rainviewer_radar.py`).
+  RainViewer's "Black and White" (scheme 0) tile encoding is a direct linear greyscale-to-dBZ
+  mapping (grey 1-127 → dBZ = grey-32), not a rendered color-ramp guess, so this is genuine
+  quantitative reflectivity — and its India coverage is itself IMD's public radar network,
+  republished by a third party rather than pulled from MOSDAC directly. No public source
+  publishes raw Doppler volumetric scans, so radial velocity (needed for the downburst rule)
+  stays synthetic even with this on.
+- **Lightning** (`nowcast/ingestion/imd_nowcast.py` + `blitzortung_lightning.py`): real
+  strikes via Blitzortung.org (`USE_LIVE_LIGHTNING=true`, no API key needed) — a free,
+  community-run VLF lightning-detection network (~1800 stations worldwide, including India),
+  streamed over a public MQTT broker. Fills a gap neither IMD nor Tomorrow.io cover
+  (Tomorrow.io's realtime weather endpoint has no lightning field). Independent of
+  `USE_LIVE_IMD`, applies on top of whichever station-data source is active. Each ingestion
+  cycle listens for strikes in a short (~6s) window, so it under-samples relative to a
+  persistent connection — zero strikes nearby is a normal, honest result, not a bug.
 
 | Layer | Real source (planned) | Current source | Notes |
 |---|---|---|---|
-| Lightning/thunderstorm/hail flags | IMD nowcast API (district/station JSON) | Synthetic, weighted by distance to a fake storm cell | Schema matches the real feed exactly; temp/humidity/wind at stations can be real via Tomorrow.io (`USE_LIVE_IMD`) |
+| Lightning | IMD nowcast API (district/station JSON) | **Real via Blitzortung.org when `USE_LIVE_LIGHTNING=true`**, else synthetic proximity-to-fake-storm | Free community VLF network, no API key |
+| Temp/humidity/wind at stations | IMD nowcast API | **Real via Tomorrow.io when `USE_LIVE_IMD=true`**, else synthetic | No lightning field, hence the separate Blitzortung path above |
 | Weather-variable grid (temp/humidity/wind overlays) | ECMWF Open Data HRES | **Real when `USE_LIVE_ECMWF=true`**, else synthetic climatology+storm perturbation | No API key needed; falls back to synthetic on any failure |
-| Satellite IR/WV/MWIR | INSAT-3D/3DR via MOSDAC (`mdapi.py`) | Synthetic Gaussian cold-cloud-top field | Same storm, correlated cold top |
-| Radar reflectivity + velocity | MOSDAC volumetric DWR (TERLS/SHAR) via `pyiwr`/Py-ART | Synthetic moving Gaussian cell + velocity couplet | No PNG-inversion shortcut taken |
+| Satellite IR/WV/MWIR | INSAT-3D/3DR via MOSDAC (`mdapi.py`) | Synthetic Gaussian cold-cloud-top field | No free replacement integrated yet; EUMETSAT Meteosat-9 IODC is a candidate (needs account signup) |
+| Radar reflectivity | MOSDAC volumetric DWR (TERLS/SHAR) via `pyiwr`/Py-ART | **Real via RainViewer when `USE_LIVE_RADAR=true`**, else synthetic moving Gaussian cell | Genuine greyscale-to-dBZ decode, no API key |
+| Radar radial velocity (downburst) | MOSDAC volumetric DWR | Synthetic velocity couplet | No public source publishes raw Doppler scans |
 
 **The map's GIS base/overlay layers are real, not synthetic.** 16 overlay layers (LULC,
 basins, drainage, landslide/fire risk, rivers, roads, railways, airports, admin/taluka
@@ -80,10 +98,12 @@ fixed) so the demo reads as one coherent storm, not disconnected synthetic layer
 
 ## Known limitations
 
-- No real Indian government data (MOSDAC/IMD) in the pipeline yet — that access is
-  unstarted. Two non-Indian real sources (Tomorrow.io, ECMWF Open Data) are wired in as
-  opt-in live paths for the station feed and weather grid respectively; hazard/satellite/
-  radar remain fully synthetic.
+- MOSDAC/IMD *nowcast API* access is still under review. Four non-MOSDAC real sources are
+  wired in as opt-in live paths in the meantime: Tomorrow.io (station temp/humidity/wind),
+  ECMWF Open Data (weather grid), RainViewer (radar reflectivity — itself IMD radar data,
+  just republished by a third party), and Blitzortung.org (real lightning strikes).
+  Satellite IR/WV/MWIR and radar radial velocity (for downburst) have no free replacement
+  integrated yet and remain fully synthetic.
 - Downburst and hail rules have never been validated against a real event; thresholds
   are physically motivated (standard meteorological literature values) but unverified.
 - The demo storm is a single idealized Gaussian cell with constant velocity — real

@@ -54,6 +54,7 @@ from nowcast.configs.settings import (
     IMD_DIR,
     USE_LIVE_IMD,
     TOMORROW_API_KEY,
+    USE_LIVE_LIGHTNING,
 )
 
 from nowcast.processing.storm_track import center_at
@@ -304,6 +305,48 @@ def _fetch_live():
 
 
 # ---------------------------------------------------------------------------
+# Real lightning overlay (Blitzortung) — independent of USE_LIVE_IMD, applies
+# on top of whichever station-data source (live Tomorrow.io or mock) is
+# active, since neither of those has a real lightning field.
+# ---------------------------------------------------------------------------
+
+def _apply_live_lightning(records):
+    """Overwrite each record's lightning_prob/_cat with real Blitzortung strikes.
+
+    Proximity-decay from the nearest real strike seen in the listen window,
+    same functional form as the mock generator's storm-proximity weighting
+    so hazard thresholds (settings.py) stay meaningful either way. Zero
+    strikes nearby is a normal result (no storm right now), not an error —
+    it correctly zeroes out lightning_prob rather than leaving a stale mock
+    value in place.
+    """
+    from nowcast.ingestion.blitzortung_lightning import fetch_strikes
+
+    strikes = fetch_strikes()
+
+    for record in records:
+        if not strikes:
+            prob = 0.0
+        else:
+            km_per_deg_lat = 111.0
+            km_per_deg_lon = 111.0 * math.cos(math.radians(record["lat"]))
+            nearest_km = min(
+                math.hypot(
+                    (record["lat"] - s["lat"]) * km_per_deg_lat,
+                    (record["lon"] - s["lon"]) * km_per_deg_lon,
+                )
+                for s in strikes
+            )
+            prob = math.exp(-(nearest_km**2) / (2 * 15.0**2))
+
+        record["lightning_prob"] = round(prob, 3)
+        record["lightning_prob_cat"] = "cat19" if prob >= 0.75 else "cat11" if prob >= 0.45 else "cat6"
+        record["lightning_source"] = "blitzortung"
+
+    return records
+
+
+# ---------------------------------------------------------------------------
 # Existing mock/replay ingestion
 # ---------------------------------------------------------------------------
 
@@ -438,6 +481,16 @@ def pull():
         )
 
         records = _fetch_mock()
+
+    if USE_LIVE_LIGHTNING:
+        try:
+            records = _apply_live_lightning(records)
+        except Exception as exc:
+            print(
+                f"[imd_nowcast] live lightning fetch failed ({exc}), "
+                "keeping existing lightning fields",
+                file=sys.stderr,
+            )
 
     timestamp = datetime.now(
         timezone.utc

@@ -6,22 +6,29 @@ Full plan: [`project.md`](project.md). One-page write-up: [`WRITEUP.md`](WRITEUP
 
 ## Current status — Definition of Done (§8) satisfied
 
-No MOSDAC or IMD *nowcast API* credentials exist yet (see Next steps) — **hail/downburst/
-cloudburst grid hazards and satellite/radar are still synthetic**, clearly labeled as such
-in code and in the dashboard itself. The IMD station feed and the weather-variable grid,
-however, now have real opt-in live paths (see below) — set the relevant `USE_LIVE_*` flag
-in `.env` (copy from `.env.example`) to switch them on; every one falls back to synthetic
-automatically if the live fetch fails for any reason. The three mock generators (IMD,
-satellite, radar) share one canonical fake storm trajectory
-(`nowcast/processing/storm_track.py`) so they agree with each other even when synthetic.
+MOSDAC/IMD *nowcast API* registration is still under review (see Next steps) — while
+waiting, several pieces have been replaced with **other free, real data sources** instead
+of staying synthetic. What's left fully synthetic: satellite IR/WV/MWIR (no public
+alternative found yet) and hail's cold-cloud-top input, plus radar's Doppler velocity
+(needed for the downburst rule — no public aggregator publishes raw volumetric scans).
+Every real source below is opt-in via a `USE_LIVE_*` flag in `.env` (copy from
+`.env.example`) and falls back to synthetic automatically if the live fetch fails.
 
 - **Ingestion (2a/2b/2c)**: `nowcast/ingestion/{imd_nowcast,satellite_insat,radar_puller}.py`
   — `imd_nowcast.py` has a real live path via Tomorrow.io's realtime weather API
   (`USE_LIVE_IMD=true` + `TOMORROW_API_KEY`) for real temperature/humidity/wind/precip at
-  the demo stations; it has no lightning field, so lightning/hail categories stay synthetic
-  even in live mode. Satellite (INSAT-like TIR1/WV/MWIR) and radar (reflectivity + radial
-  velocity) are still fully synthetic — no MOSDAC access yet. Each puller runs
-  independently; one failing doesn't block the others (`_ingest_all` in `api/main.py`).
+  the demo stations. Real lightning strikes are layered on top independently via
+  Blitzortung.org (`USE_LIVE_LIGHTNING=true`, no key needed — see
+  `nowcast/ingestion/blitzortung_lightning.py`), a free community VLF detection network,
+  since neither IMD nor Tomorrow.io expose a lightning field. Radar reflectivity is real
+  via RainViewer (`USE_LIVE_RADAR=true`, no key needed — see
+  `nowcast/ingestion/rainviewer_radar.py`): its "Black and White" tile scheme is a direct
+  greyscale-to-dBZ encoding, not a rendered color guess, and its India coverage is itself
+  IMD's public radar network republished by a third party. Radial velocity (downburst)
+  stays synthetic even with radar live, since no public source exposes it. Satellite
+  (INSAT-like TIR1/WV/MWIR) is still fully synthetic — no replacement source integrated
+  yet. Each puller runs independently; one failing doesn't block the others
+  (`_ingest_all` in `api/main.py`).
 - **Weather-variable grid**: `nowcast/processing/weather_fields.py` — real ECMWF Open Data
   (HRES forecast, 0.25°, updated 4x/day) via `nowcast/ingestion/ecmwf_weather.py` when
   `USE_LIVE_ECMWF=true`. Genuinely free, **no API key needed** — ECMWF's older key-based
@@ -72,7 +79,8 @@ satellite, radar) share one canonical fake storm trajectory
   HTML/JS version is kept at `nowcast/dashboard/legacy/index.html` for reference but is
   no longer maintained. Verified with a headless-browser pass (Playwright) — see below.
 
-Not built: real hazard/satellite/radar access (blocked on §1 registration), SmaAt-UNet
+Not built: real satellite access (no free alternative integrated yet), real Doppler
+velocity for downburst (no public source exists outside MOSDAC/IMD), SmaAt-UNet
 fine-tuning (the plan's Option B for 4b — DGMR zero-shot, Option A, was built instead).
 
 ## Run it
@@ -116,11 +124,14 @@ errors. Two real bugs were caught this way and fixed:
 
 ## Next steps (in plan order)
 
-1. Register MOSDAC + request IMD API access (project.md section 1) — do this first, it's
-   the longest lead time item, and nothing above becomes "real" without it.
-2. Implement `_fetch_live` in `imd_nowcast.py`, `satellite_insat.py`, `radar_puller.py`
-   once access is granted — swap-in points are marked, schemas already match.
-3. Once real radar CAPPI grids exist, downburst/hail thresholds should be re-validated
-   against them — the current thresholds are textbook values, never checked against data.
+1. MOSDAC/IMD nowcast API registration is submitted and under review (project.md section
+   1) — once granted, swap `radar_puller.py`'s velocity and `satellite_insat.py` over to
+   real MOSDAC sources; everything else already has a real stand-in (see above).
+2. A real EUMETSAT Meteosat-9 (Indian Ocean Data Coverage) satellite IR feed is a
+   candidate replacement for the still-synthetic satellite channel — needs a free
+   EUMETSAT User Portal account + API key (`eumdac` client) that hasn't been set up yet.
+3. Once real radar CAPPI grids or RainViewer's live feed have been observed against
+   actual storms, downburst/hail thresholds should be re-validated — the current
+   thresholds are textbook values, never checked against data.
 4. Remaining stretch goals: multi-region coverage; historical validation against Bhuvan
    LDSN; SmaAt-UNet fine-tuning as a second deep-model comparison alongside DGMR.

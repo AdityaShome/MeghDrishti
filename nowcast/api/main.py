@@ -300,16 +300,19 @@ def nowcast_frame(
 def raw_layers():
     """Satellite IR + radar reflectivity as image overlays (section 5a).
 
-    Rendered from the synthetic fusion grid until MOSDAC/IMD radar access
-    exists (2b/2c) — same bbox-anchored PNG-overlay contract the real
-    pipeline will use (real satellite reprojected via pyresample, real
-    radar as a Py-ART CAPPI), so the dashboard doesn't change when the
-    source is swapped.
+    Satellite stays synthetic (no MOSDAC/INSAT access yet). Radar is real
+    when `USE_LIVE_RADAR=true` — see radar_puller.py / rainviewer_radar.py —
+    sourced from RainViewer, not MOSDAC directly. Same bbox-anchored
+    PNG-overlay contract either way, so the dashboard doesn't change when
+    the source is swapped.
     """
     frame = _refresh_fusion()
     if frame is None:
         return {"layers": [], "note": "no fused frame yet — ingestion still warming up"}
 
+    from nowcast.ingestion.radar_puller import USE_LIVE_RADAR
+
+    radar_source = "rainviewer" if USE_LIVE_RADAR else "synthetic"
     ch = frame["channels"]
     layers = [
         {
@@ -324,10 +327,15 @@ def raw_layers():
             "label": "Radar reflectivity (dBZ)",
             "bbox": frame["bbox"],
             "image": _array_to_png_data_url(ch["reflectivity_dbz"], "turbo", vmin=0, vmax=65),
-            "source": "synthetic",
+            "source": radar_source,
         },
     ]
-    return {"layers": layers, "note": "synthetic sensors — no MOSDAC/IMD radar or satellite access yet"}
+    note = (
+        "satellite synthetic; radar real via RainViewer (IMD-sourced, not direct MOSDAC)"
+        if USE_LIVE_RADAR
+        else "synthetic sensors — no MOSDAC/IMD radar or satellite access yet"
+    )
+    return {"layers": layers, "note": note}
 
 
 @app.get("/weather-layers")
