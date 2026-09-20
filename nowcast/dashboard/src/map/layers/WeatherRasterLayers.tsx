@@ -21,6 +21,16 @@ export function WeatherRasterLayers({ layers, activeVar }: { layers: WeatherLaye
     visible: activeVar === "wind_speed",
     beforeId: "heat-hail",
   });
+  useRasterLayer(map, "layer-pressure", byId.pressure?.image, byId.pressure?.bbox, {
+    opacity: 0.55,
+    visible: activeVar === "pressure",
+    beforeId: "heat-hail",
+  });
+  useRasterLayer(map, "layer-rainfall", byId.rainfall?.image, byId.rainfall?.bbox, {
+    opacity: 0.6,
+    visible: activeVar === "rainfall",
+    beforeId: "heat-hail",
+  });
 
   return null;
 }

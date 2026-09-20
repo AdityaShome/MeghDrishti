@@ -67,7 +67,7 @@ export interface RawLayersResponse {
 }
 
 export interface WeatherLayer {
-  id: "temperature" | "humidity" | "wind_speed";
+  id: "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall";
   label: string;
   unit: string;
   bbox: Bbox;
@@ -98,6 +98,7 @@ export interface RegionForecast {
   humidity_pct: number;
   wind_speed_ms: number;
   wind_dir_deg: number;
+  pressure_hpa: number;
   lead_minutes: number;
   cloudburst_rainrate_mm_hr: number | null;
 }

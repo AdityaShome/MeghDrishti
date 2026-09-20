@@ -36,7 +36,7 @@ import {
 } from "./hooks/useNowcastData";
 import type { ModelId, RegionForecast, HazardsResponse, RawLayer, WeatherLayer, WindPoint, NowcastFrame } from "./types";
 
-type VarId = "none" | "temperature" | "humidity" | "wind_speed";
+type VarId = "none" | "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall";
 
 const LEAD_MAX = { pysteps: 360, dgmr: 90 } as const;
 
@@ -66,8 +66,25 @@ function Dashboard() {
   const rawLayers = useRawLayers();
   const forecastSummary = useForecastSummary(model);
   const nowcastFrame = useNowcastFrame(model, leadMinutes, modelFrameVisible);
-  const weatherLayers = useWeatherLayers(leadMinutes, activeVar !== "none");
+  const weatherLayers = useWeatherLayers(leadMinutes, activeVar !== "none" && activeVar !== "rainfall");
   const windVectors = useWindVectors(leadMinutes, activeVar === "wind_speed");
+  // Rainfall reuses the pySTEPS rain-rate frame (already computed for the
+  // model-comparison toggle) as a regular weather-variable option instead of
+  // a separate endpoint — same real mm/hr data, same 0-6h lead-time slider.
+  const rainfallFrame = useNowcastFrame("pysteps", leadMinutes, activeVar === "rainfall");
+  const rainfallLayer: WeatherLayer | null =
+    rainfallFrame.data?.available && rainfallFrame.data.image && rainfallFrame.data.bbox
+      ? {
+          id: "rainfall",
+          label: "Rain rate (pySTEPS)",
+          unit: "mm/hr",
+          bbox: rainfallFrame.data.bbox,
+          vmin: 0,
+          vmax: 65,
+          image: rainfallFrame.data.image,
+        }
+      : null;
+  const displayedWeatherLayers = [...(weatherLayers.data?.layers ?? []), ...(rainfallLayer ? [rainfallLayer] : [])];
 
   useEffect(() => {
     setApiUnreachable(Boolean(hazards.error && hazards.error.includes("Failed to fetch")));
@@ -148,7 +165,7 @@ function Dashboard() {
     });
   }
 
-  const activeMeta = activeVar !== "none" ? weatherLayers.data?.layers.find((l) => l.id === activeVar) ?? null : null;
+  const activeMeta = activeVar !== "none" ? displayedWeatherLayers.find((l) => l.id === activeVar) ?? null : null;
   const dgmrUnavailable = forecastSummary.data?.available === false;
   const apiOk = !apiUnreachable && !hazards.error;
   const banner =
@@ -189,7 +206,7 @@ function Dashboard() {
               rawLayers={rawLayers.data?.layers ?? null}
               satelliteVisible={satelliteVisible}
               radarVisible={radarVisible}
-              weatherLayers={weatherLayers.data?.layers ?? null}
+              weatherLayers={displayedWeatherLayers}
               activeVar={activeVar}
               windPoints={windVectors.data?.points ?? null}
               modelFrame={nowcastFrame.data ?? null}

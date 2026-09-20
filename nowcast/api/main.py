@@ -417,6 +417,14 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
             "vmin": 0, "vmax": 18,
             "image": _array_to_png_data_url(g["wind_speed_ms"], "plasma", vmin=0, vmax=18),
         },
+        {
+            "id": "pressure",
+            "label": "Mean sea level pressure",
+            "unit": "hPa",
+            "bbox": g["bbox"],
+            "vmin": 995, "vmax": 1015,
+            "image": _array_to_png_data_url(g["pressure_hpa"], "coolwarm", vmin=995, vmax=1015),
+        },
     ]
     source = g.get("source", "synthetic")
     note = (

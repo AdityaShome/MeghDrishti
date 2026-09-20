@@ -45,6 +45,10 @@ export function RegionFloating({
             </span>
           </div>
           <div className="hazard-stat" style={{ flexDirection: "row", justifyContent: "space-between" }}>
+            <span className="lbl">Pressure</span>
+            <span className="val">{reading ? `${reading.pressure_hpa} hPa` : "…"}</span>
+          </div>
+          <div className="hazard-stat" style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <span className="lbl">Cloudburst rain rate</span>
             <span className="val">
               {reading

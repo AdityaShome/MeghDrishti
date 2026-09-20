@@ -24,6 +24,8 @@ export const VAR_COLOR_STOPS: Record<string, [string, string, string]> = {
   temperature: ["#3fb6ff", "#f0b429", "#f5486b"],
   humidity: ["#f5f0c8", "#4fb5d6", "#1c4e8a"],
   wind_speed: ["#2a1a5e", "#b53f92", "#f0b429"],
+  pressure: ["#f5486b", "#f5f0c8", "#3fb6ff"],
+  rainfall: ["#0b1e3d", "#2fb0e0", "#f0b429"],
 };
 
 export function lerpColor(stops: readonly string[], t: number): string {

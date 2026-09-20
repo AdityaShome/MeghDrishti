@@ -66,19 +66,23 @@ def _fetch_and_process(step):
     tmp_dir = tempfile.mkdtemp(prefix="ecmwf_")
     t_path = os.path.join(tmp_dir, "t2.grib2")
     w_path = os.path.join(tmp_dir, "wind10.grib2")
-    # two separate retrievals: 2t/2d (heightAboveGround=2) and 10u/10v
-    # (heightAboveGround=10) can't be decoded from one cfgrib dataset —
-    # cfgrib refuses to merge two different heightAboveGround values.
+    p_path = os.path.join(tmp_dir, "msl.grib2")
+    # three separate retrievals: 2t/2d (heightAboveGround=2), 10u/10v
+    # (heightAboveGround=10), and msl (meanSea level) each need their own
+    # cfgrib dataset — cfgrib refuses to merge different level types.
     _CLIENT.retrieve(type="fc", step=step, param=["2t", "2d"], target=t_path)
     _CLIENT.retrieve(type="fc", step=step, param=["10u", "10v"], target=w_path)
+    _CLIENT.retrieve(type="fc", step=step, param=["msl"], target=p_path)
 
     t_ds = xr.open_dataset(t_path, engine="cfgrib")
     w_ds = xr.open_dataset(w_path, engine="cfgrib")
+    p_ds = xr.open_dataset(p_path, engine="cfgrib")
 
     lon_min, lat_min, lon_max, lat_max = WIDE_BBOX
     pad = 0.5  # margin so interpolation has real neighbors at the grid edges
     t_sub = _subset(t_ds, lon_min - pad, lat_min - pad, lon_max + pad, lat_max + pad)
     w_sub = _subset(w_ds, lon_min - pad, lat_min - pad, lon_max + pad, lat_max + pad)
+    p_sub = _subset(p_ds, lon_min - pad, lat_min - pad, lon_max + pad, lat_max + pad)
 
     lons_t = np.linspace(lon_min, lon_max, WIDE_GRID_SIZE)
     lats_t = np.linspace(lat_min, lat_max, WIDE_GRID_SIZE)
@@ -88,6 +92,7 @@ def _fetch_and_process(step):
     d2m_k = _regrid(t_sub.d2m.values, t_sub.latitude.values, t_sub.longitude.values, lat_grid, lon_grid)
     u10 = _regrid(w_sub.u10.values, w_sub.latitude.values, w_sub.longitude.values, lat_grid, lon_grid)
     v10 = _regrid(w_sub.v10.values, w_sub.latitude.values, w_sub.longitude.values, lat_grid, lon_grid)
+    msl_pa = _regrid(p_sub.msl.values, p_sub.latitude.values, p_sub.longitude.values, lat_grid, lon_grid)
 
     temperature_c = t2m_k - 273.15
     dewpoint_c = d2m_k - 273.15
@@ -95,12 +100,14 @@ def _fetch_and_process(step):
     wind_speed_ms = np.sqrt(u10**2 + v10**2)
     # meteorological convention: direction wind is blowing FROM
     wind_dir_deg = (np.degrees(np.arctan2(-u10, -v10)) + 360) % 360
+    pressure_hpa = msl_pa / 100.0
 
     return {
         "temperature_c": temperature_c.astype(np.float32),
         "humidity_pct": humidity_pct.astype(np.float32),
         "wind_speed_ms": wind_speed_ms.astype(np.float32),
         "wind_dir_deg": wind_dir_deg.astype(np.float32),
+        "pressure_hpa": pressure_hpa.astype(np.float32),
         "bbox": WIDE_BBOX,
         "grid_size": WIDE_GRID_SIZE,
         "source": "ecmwf-opendata",
@@ -125,6 +132,6 @@ def fetch_grid(lead_minutes=0):
 
 if __name__ == "__main__":
     g = fetch_grid(0)
-    for k in ["temperature_c", "humidity_pct", "wind_speed_ms", "wind_dir_deg"]:
+    for k in ["temperature_c", "humidity_pct", "wind_speed_ms", "wind_dir_deg", "pressure_hpa"]:
         arr = g[k]
         print(f"{k}: min={arr.min():.1f} max={arr.max():.1f} mean={arr.mean():.1f}")

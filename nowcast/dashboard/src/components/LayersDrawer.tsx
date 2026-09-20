@@ -3,7 +3,7 @@ import { BASE_LAYERS, OVERLAY_LAYERS } from "../lib/mosdacLayers";
 import { VAR_COLOR_STOPS } from "../lib/colors";
 import type { ModelId, WeatherLayer } from "../types";
 
-type VarId = "none" | "temperature" | "humidity" | "wind_speed";
+type VarId = "none" | "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall";
 
 export function LayersDrawer({
   onClose,
@@ -75,7 +75,7 @@ export function LayersDrawer({
 
       <div className="panel-section">
         <div className="section-title">Weather variables</div>
-        <div className="seg-row grid2">
+        <div className="seg-row grid3">
           <button className={`seg-btn ${activeVar === "none" ? "active" : ""}`} onClick={() => onVarChange("none")}>
             None
           </button>
@@ -88,6 +88,12 @@ export function LayersDrawer({
           <button className={`seg-btn ${activeVar === "wind_speed" ? "active" : ""}`} onClick={() => onVarChange("wind_speed")}>
             Wind
           </button>
+          <button className={`seg-btn ${activeVar === "pressure" ? "active" : ""}`} onClick={() => onVarChange("pressure")}>
+            Pressure
+          </button>
+          <button className={`seg-btn ${activeVar === "rainfall" ? "active" : ""}`} onClick={() => onVarChange("rainfall")}>
+            Rainfall
+          </button>
         </div>
         {stops && (
           <>
@@ -98,7 +104,7 @@ export function LayersDrawer({
             </div>
           </>
         )}
-        {weatherSource === "ecmwf-opendata" && (
+        {weatherSource === "ecmwf-opendata" && activeVar !== "rainfall" && (
           <div className="note-text">
             <span className="real-badge">REAL</span>
             ECMWF Open Data (HRES forecast, CC-BY-4.0) — no API key needed.

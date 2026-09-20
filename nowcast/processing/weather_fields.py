@@ -42,6 +42,9 @@ _STORM_HUMIDITY_BOOST_PCT = 30.0
 _STORM_WIND_BOOST_MS = 9.0
 _STORM_INFLUENCE_KM = 45.0
 
+_PRESSURE_BASE_HPA = 1010.0
+_STORM_PRESSURE_DIP_HPA = 12.0  # mesoscale convective low at the storm core
+
 
 def _grid_coords():
     lon_min, lat_min, lon_max, lat_max = WIDE_BBOX
@@ -85,19 +88,21 @@ def _fields_at(lat, lon, t_min):
     c_lat, c_lon = center_at(t_min)
     inflow_bearing = (np.degrees(np.arctan2(c_lon - lon, c_lat - lat)) + 360) % 360
     wind_dir_deg = _WIND_BASE_BEARING_DEG * (1 - proximity) + inflow_bearing * proximity
+    pressure_hpa = _PRESSURE_BASE_HPA - _STORM_PRESSURE_DIP_HPA * proximity
 
-    return temperature_c, humidity_pct, wind_speed_ms, wind_dir_deg
+    return temperature_c, humidity_pct, wind_speed_ms, wind_dir_deg, pressure_hpa
 
 
 def _generate_grid_mock(t_min=0):
     lon_grid, lat_grid = _grid_coords()
-    temperature_c, humidity_pct, wind_speed_ms, wind_dir_deg = _fields_at(lat_grid, lon_grid, t_min)
+    temperature_c, humidity_pct, wind_speed_ms, wind_dir_deg, pressure_hpa = _fields_at(lat_grid, lon_grid, t_min)
     noise = lambda scale: np.random.normal(0, scale, lat_grid.shape)
     return {
         "temperature_c": (temperature_c + noise(0.4)).astype(np.float32),
         "humidity_pct": np.clip(humidity_pct + noise(2.0), 0, 100).astype(np.float32),
         "wind_speed_ms": np.clip(wind_speed_ms + noise(0.3), 0, None).astype(np.float32),
         "wind_dir_deg": (wind_dir_deg % 360).astype(np.float32),
+        "pressure_hpa": (pressure_hpa + noise(0.5)).astype(np.float32),
         "bbox": WIDE_BBOX,
         "grid_size": WIDE_GRID_SIZE,
         "source": "synthetic",
@@ -126,6 +131,7 @@ def _sample_from_grid(grid, lat, lon):
         "humidity_pct": round(float(np.clip(grid["humidity_pct"][yi, xi], 0, 100)), 1),
         "wind_speed_ms": round(float(max(grid["wind_speed_ms"][yi, xi], 0)), 1),
         "wind_dir_deg": round(float(grid["wind_dir_deg"][yi, xi] % 360), 1),
+        "pressure_hpa": round(float(grid["pressure_hpa"][yi, xi]), 1),
     }
 
 
@@ -138,12 +144,13 @@ def sample_point(lat, lon, t_min=0):
         except Exception as exc:
             print(f"[weather_fields] ECMWF live fetch failed ({exc}), falling back to synthetic", file=sys.stderr)
 
-    temperature_c, humidity_pct, wind_speed_ms, wind_dir_deg = _fields_at(lat, lon, t_min)
+    temperature_c, humidity_pct, wind_speed_ms, wind_dir_deg, pressure_hpa = _fields_at(lat, lon, t_min)
     return {
         "temperature_c": round(float(temperature_c), 1),
         "humidity_pct": round(float(np.clip(humidity_pct, 0, 100)), 1),
         "wind_speed_ms": round(float(max(wind_speed_ms, 0)), 1),
         "wind_dir_deg": round(float(wind_dir_deg % 360), 1),
+        "pressure_hpa": round(float(pressure_hpa), 1),
     }
 
 
@@ -164,7 +171,7 @@ def wind_vector_points(stride=4, t_min=0):
 
 if __name__ == "__main__":
     g = generate_grid()
-    for k in ["temperature_c", "humidity_pct", "wind_speed_ms", "wind_dir_deg"]:
+    for k in ["temperature_c", "humidity_pct", "wind_speed_ms", "wind_dir_deg", "pressure_hpa"]:
         arr = g[k]
         print(f"{k}: min={arr.min():.1f} max={arr.max():.1f} mean={arr.mean():.1f}")
     print("point sample @storm core:", sample_point(18.30, 73.65, 0))
