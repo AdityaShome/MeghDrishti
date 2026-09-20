@@ -3,7 +3,9 @@
 Demo region default: Pune district, Maharashtra (good IMD AWS density,
 inside MOSDAC radar footprint). Change BBOX to retarget the whole pipeline.
 """
+import contextlib
 import os
+import threading
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,29 +32,65 @@ REGIONS = {
     "guwahati": {"name": "Guwahati", "bbox": (91.5, 26.0, 92.0, 26.5)},
 }
 
-_active_region_key = "pune"
+_active_region_key = "pune"  # persistent global, set only by set_active_region()
+_region_override = threading.local()  # per-thread override, see override_active_region()
 
 
 def get_active_region_key():
-    return _active_region_key
+    """The active region — a thread-local override if one is in effect on
+    *this* thread (see override_active_region), else the persistent global
+    that every other thread/request sees."""
+    return getattr(_region_override, "key", None) or _active_region_key
 
 
 def set_active_region(key):
-    """Switch the active demo region. Takes effect on the next ingest cycle —
-    every consumer calls get_region_bbox()/get_region_name() fresh rather than
-    importing a frozen constant, see settings.py's own module docstring note."""
+    """Persistently switch the active demo region for every future request
+    on every thread — this is the real, user-facing switch (the
+    /regions/{key} endpoint). Takes effect immediately: every consumer calls
+    get_region_bbox()/get_region_name() fresh rather than importing a frozen
+    constant. For a temporary, single-thread-only switch, use
+    override_active_region() instead — see its docstring for why the
+    distinction matters."""
     global _active_region_key
     if key not in REGIONS:
         raise ValueError(f"unknown region '{key}', choose from {list(REGIONS)}")
     _active_region_key = key
 
 
+@contextlib.contextmanager
+def override_active_region(key):
+    """Temporarily switch the active region for the CURRENT THREAD ONLY,
+    leaving the persistent global (and therefore every other in-flight
+    request, which may run on a different threadpool thread) untouched.
+
+    Exists for the background region pre-warm loop (api/main.py): warming
+    region B for a ~10-20s ingest cycle must not make a concurrent request
+    for region A transiently see region B's bbox — that happened in
+    testing when this used a naive "save global, mutate it, restore it"
+    approach instead, and a live request landed mid-warm and silently got
+    the wrong region's data. threading.local() isolates it per-OS-thread,
+    which is exactly the boundary FastAPI's sync-endpoint threadpool and
+    this module's dedicated background thread both already respect.
+    """
+    if key not in REGIONS:
+        raise ValueError(f"unknown region '{key}', choose from {list(REGIONS)}")
+    prev = getattr(_region_override, "key", None)
+    _region_override.key = key
+    try:
+        yield
+    finally:
+        if prev is None:
+            del _region_override.key
+        else:
+            _region_override.key = prev
+
+
 def get_region_bbox():
-    return REGIONS[_active_region_key]["bbox"]
+    return REGIONS[get_active_region_key()]["bbox"]
 
 
 def get_region_name():
-    return REGIONS[_active_region_key]["name"]
+    return REGIONS[get_active_region_key()]["name"]
 
 
 # Legacy static constants — frozen at import time, do NOT reflect region

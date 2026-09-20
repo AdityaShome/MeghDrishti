@@ -42,9 +42,15 @@ export function HazardLayers({
         source: `cells-${spec.id}`,
         paint: {
           "heatmap-weight": ["interpolate", ["linear"], ["get", spec.weightField], 0, 0, spec.weightMax, 1],
-          "heatmap-intensity": 1.1,
-          "heatmap-radius": 26,
-          "heatmap-opacity": 0.8,
+          "heatmap-intensity": 0.8,
+          // A flat pixel radius saturates into a solid blob when the
+          // storm-scale box (fixed ~50km / GRID_SIZE=64 cells) is viewed
+          // zoomed out enough that its ~150-220 overlapping cells compress
+          // into a few dozen screen pixels — this scales the radius down at
+          // low zoom so it reads as a soft glow instead of a solid block,
+          // and up at high zoom so individual cells still blend smoothly.
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 7, 4, 11, 14, 14, 26, 17, 42],
+          "heatmap-opacity": 0.75,
           "heatmap-color": [
             "interpolate",
             ["linear"],

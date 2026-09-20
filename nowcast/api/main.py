@@ -28,6 +28,7 @@ from nowcast.configs.settings import (
     get_active_region_key,
     get_region_name,
     set_active_region,
+    override_active_region,
 )
 from nowcast.ingestion.imd_nowcast import pull as pull_imd
 from nowcast.ingestion.satellite_insat import pull as pull_satellite
@@ -141,21 +142,24 @@ def _ingest_all():
 
 def _warm_region(key):
     """Run a full ingest+forecast+fusion cycle for `key` and stash the
-    result in _region_snapshots, without permanently disturbing whichever
-    region is currently active for live requests — restores the previous
-    active region before returning either way."""
-    prev_key = get_active_region_key()
+    result in _region_snapshots. Uses override_active_region — a
+    thread-local switch — rather than mutating the persistent global
+    active region: this runs for ~10-20s per region, and an earlier version
+    that mutated the shared global (even with a save/restore dance) let a
+    concurrent request land mid-warm and transiently see the wrong region's
+    bbox, confirmed in testing. Thread-local isolation means concurrent
+    requests on other threads are never affected, regardless of timing."""
     try:
-        set_active_region(key)
-        _ingest_all()
-        path = _latest_snapshot_path()
-        if path is None:
-            return
-        with open(path) as f:
-            data = json.load(f)
-        records = [classify_station(r) for r in data["records"]]
-        forecast = run_forecast()
-        fusion_frame = build_fused_frame()
+        with override_active_region(key):
+            _ingest_all()
+            path = _latest_snapshot_path()
+            if path is None:
+                return
+            with open(path) as f:
+                data = json.load(f)
+            records = [classify_station(r) for r in data["records"]]
+            forecast = run_forecast()
+            fusion_frame = build_fused_frame()
         with _lock:
             _region_snapshots[key] = {
                 "records": records,
@@ -166,12 +170,6 @@ def _warm_region(key):
             }
     except Exception as exc:
         print(f"[api] pre-warm failed for region '{key}': {exc}")
-    finally:
-        # Only restore if nothing else changed the active region while this
-        # was running (e.g. a user switch landed mid-warm via /regions/{key})
-        # — don't stomp on a more recent switch made from another thread.
-        if get_active_region_key() == key:
-            set_active_region(prev_key)
 
 
 def _apply_snapshot(key):
