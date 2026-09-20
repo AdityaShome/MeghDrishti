@@ -27,8 +27,10 @@ back to synthetic automatically if the live fetch fails.
   stays synthetic even with radar live, since no public source exposes it. Satellite is
   real via two sources (`USE_LIVE_SATELLITE=true`, each needs its own free account):
   EUMETSAT MSG SEVIRI (`nowcast/ingestion/eumetsat_satellite.py`, `EUMETSAT_CONSUMER_KEY`/
-  `SECRET`) is tried first — geostationary, continuous coverage, written against a real
-  API but not yet verified live — falling back to Copernicus Sentinel-3 SLSTR
+  `SECRET`) is tried first — geostationary, continuous coverage — but currently blocked
+  by a `403` pending EUMETSAT-side license propagation (account registered, license
+  accepted, still 403 — see module docstring), so it falls back to Copernicus Sentinel-3
+  SLSTR
   (`nowcast/ingestion/copernicus_satellite.py`, `COPERNICUS_CLIENT_ID`/`SECRET`, verified
   live) if unconfigured or it fails. `wv`/`mwir` stay synthetic regardless (neither source
   has equivalent channels), and Sentinel-3 being polar-orbiting means frequent "no recent

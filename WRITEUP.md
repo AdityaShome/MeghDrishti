@@ -47,8 +47,12 @@ automatically on any fetch failure:
 - **Satellite** (`nowcast/ingestion/satellite_insat.py` + two live sources, tried in
   order): **EUMETSAT MSG SEVIRI** (`eumetsat_satellite.py`, `EUMETSAT_CONSUMER_KEY`/
   `SECRET`) — geostationary, continuous 15min updates, actually centered on India;
-  written against `eumdac`'s real, introspected API but **not yet verified against live
-  credentials**, may need debugging. Falls back to **Copernicus Sentinel-3 SLSTR**
+  registered and auth/search confirmed working live, but currently **blocked by a 403**
+  pending EUMETSAT-side license propagation (account registered, "Meteosat < 1 hr
+  latency" license accepted, still 403 on both Data Tailor and direct Data Store
+  download — see module docstring). One real bug was found and fixed along the way:
+  `RegionOfInterest.NSWE` needs a plain list of floats, not the comma-joined string its
+  type hint implies. Falls back to **Copernicus Sentinel-3 SLSTR**
   (`copernicus_satellite.py`, `COPERNICUS_CLIENT_ID`/`SECRET`) if EUMETSAT is
   unconfigured or fails — **verified live**, real brightness temperatures (246-323K,
   physically plausible) confirmed across Pune, Delhi, Chennai, and Guwahati. Neither
