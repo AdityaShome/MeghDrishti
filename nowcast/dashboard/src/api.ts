@@ -8,6 +8,8 @@ import type {
   ForecastSummary,
   NowcastFrame,
   ModelId,
+  HistoryTimestampsResponse,
+  HistoryHazardsResponse,
 } from "./types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
@@ -41,6 +43,8 @@ export const api = {
   forecast: (model: ModelId) => getJSON<ForecastSummary>(`/forecast?model=${model}`),
   nowcastFrame: (model: ModelId, leadMinutes: number) =>
     getJSON<NowcastFrame>(`/nowcast-frame?model=${model}&lead_time=${leadMinutes}`),
+  historyTimestamps: () => getJSON<HistoryTimestampsResponse>("/history/timestamps"),
+  historyHazards: (timestamp: string) => getJSON<HistoryHazardsResponse>(`/history/hazards?timestamp=${timestamp}`),
 };
 
 export { ApiError };

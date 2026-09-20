@@ -125,3 +125,14 @@ export interface NowcastFrame {
   source?: string;
   note?: string;
 }
+
+export interface HistoryTimestampsResponse {
+  timestamps: string[];
+}
+
+export interface HistoryHazardsResponse {
+  type: "FeatureCollection";
+  features: HazardFeature[];
+  timestamp: string;
+  note: string;
+}

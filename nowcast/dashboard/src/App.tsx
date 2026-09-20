@@ -13,8 +13,10 @@ import { useRegionClick } from "./map/useRegionClick";
 
 import { TopBar } from "./components/TopBar";
 import { Banner } from "./components/Banner";
-import { LeftNavigation } from "./components/LeftNavigation";
+import { LeftNavigation, type ActivePanel } from "./components/LeftNavigation";
 import { HazardsPage } from "./components/HazardsPage";
+import { ForecastPage } from "./components/ForecastPage";
+import { ReplayPage } from "./components/ReplayPage";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { RightSidebar } from "./components/RightSidebar";
 import { BottomPanel } from "./components/BottomPanel";
@@ -54,8 +56,7 @@ function Dashboard() {
   const [region, setRegion] = useState<{ lat: number; lon: number } | null>(null);
   const [regionLeadMinutes, setRegionLeadMinutes] = useState(0);
   const [regionReading, setRegionReading] = useState<RegionForecast | null>(null);
-  const [layersOpen, setLayersOpen] = useState(false);
-  const [hazardsOpen, setHazardsOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<ActivePanel>("none");
   const [isPlaying, setIsPlaying] = useState(false);
   const [apiUnreachable, setApiUnreachable] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -144,28 +145,25 @@ function Dashboard() {
 
   return (
     <div className="app-shell">
-      <LeftNavigation
-        layersOpen={layersOpen}
-        onToggleLayers={() => setLayersOpen((v) => !v)}
-        hazardsOpen={hazardsOpen}
-        onToggleHazards={() => setHazardsOpen((v) => !v)}
-      />
+      <LeftNavigation active={activePanel} onSelect={setActivePanel} />
 
       <div className="app-content">
         <TopBar apiOk={apiOk} lastUpdated={lastUpdated} />
 
         <div className="main-body">
-          {hazardsOpen && (
+          {activePanel === "hazards" && (
             <HazardsPage
               hazards={hazards.data ?? null}
               stormCells={stormEta.data?.cells ?? null}
-              onClose={() => setHazardsOpen(false)}
+              onClose={() => setActivePanel("none")}
               onSelectLocation={(lat, lon) => {
-                setHazardsOpen(false);
+                setActivePanel("none");
                 selectRegion(lat, lon);
               }}
             />
           )}
+          {activePanel === "forecast" && <ForecastPage onClose={() => setActivePanel("none")} />}
+          {activePanel === "replay" && <ReplayPage onClose={() => setActivePanel("none")} />}
 
           <LeftSidebar hazards={hazards.data ?? null} model={model} apiOk={apiOk} lastUpdated={lastUpdated} />
 
@@ -188,9 +186,9 @@ function Dashboard() {
               activeOverlayIds={activeOverlayIds}
             />
 
-            {layersOpen && (
+            {activePanel === "layers" && (
               <LayersDrawer
-                onClose={() => setLayersOpen(false)}
+                onClose={() => setActivePanel("none")}
                 model={model}
                 onModelChange={setModel}
                 dgmrUnavailable={dgmrUnavailable}
@@ -308,7 +306,14 @@ function Dashboard() {
           <RightSidebar stormCells={stormEta.data?.cells ?? null} forecast={forecastSummary.data ?? null} />
         </div>
 
-        <BottomPanel model={model} leadMinutes={leadMinutes} onLeadChange={setLeadMinutes} forecast={forecastSummary.data ?? null} hazards={hazards.data ?? null} />
+        <BottomPanel
+          model={model}
+          leadMinutes={leadMinutes}
+          onLeadChange={setLeadMinutes}
+          forecast={forecastSummary.data ?? null}
+          hazards={hazards.data ?? null}
+          onOpenReplay={() => setActivePanel("replay")}
+        />
       </div>
     </div>
   );

@@ -10,12 +10,14 @@ export function BottomPanel({
   onLeadChange,
   forecast,
   hazards,
+  onOpenReplay,
 }: {
   model: ModelId;
   leadMinutes: number;
   onLeadChange: (m: number) => void;
   forecast: ForecastSummary | null;
   hazards: HazardsResponse | null;
+  onOpenReplay: () => void;
 }) {
   const steps = model === "dgmr" ? TIMELINE_STEPS_DGMR : TIMELINE_STEPS_PYSTEPS;
 
@@ -116,9 +118,12 @@ export function BottomPanel({
 
       <div className="panel-section" style={{ width: 220 }}>
         <div className="section-title">Replay</div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5 }}>
-          Not implemented — no historical archive endpoint exists yet.
+        <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 10 }}>
+          Step through real historical hazard snapshots.
         </div>
+        <button className="btn-secondary" onClick={onOpenReplay}>
+          Open Replay
+        </button>
       </div>
     </div>
   );

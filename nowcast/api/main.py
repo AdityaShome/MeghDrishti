@@ -10,13 +10,14 @@ import glob
 import io
 import json
 import os
+import re
 import sys
 import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import requests
-from fastapi import FastAPI, Query, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from nowcast.configs.settings import IMD_DIR, INGEST_CYCLE_MINUTES, CLOUDBURST_RAIN_RATE_MM_HR
@@ -26,7 +27,7 @@ from nowcast.ingestion.radar_puller import pull as pull_radar
 from nowcast.models.hazard import classify_station, hail_cells, downburst_cells
 from nowcast.models.eta import storm_cells
 from nowcast.models.pysteps_baseline import run_forecast, cloudburst_cells
-from nowcast.processing.fusion import build_fused_frame
+from nowcast.processing.fusion import build_fused_frame, list_imd_timestamps, build_fused_frame_for_timestamp
 from nowcast.processing import weather_fields
 
 app = FastAPI(title="MeghDrishti Nowcast API")
@@ -417,6 +418,84 @@ def wms_proxy_bhuvan(request: Request):
         status_code=upstream.status_code,
         media_type=upstream.headers.get("Content-Type", "image/png"),
     )
+
+
+_TIMESTAMP_RE = re.compile(r"^\d{8}T\d{6}Z$")
+
+
+@app.get("/history/timestamps")
+def history_timestamps():
+    """Every IMD ingestion snapshot currently on disk — the real (if
+    short-lived, since it only covers this server process's uptime)
+    historical archive Replay is built on. Each ingestion cycle writes a
+    new timestamped file rather than overwriting the last one."""
+    return {"timestamps": list_imd_timestamps()}
+
+
+@app.get("/history/hazards")
+def history_hazards(timestamp: str):
+    """Reconstruct hazards for a specific historical IMD snapshot — real
+    replay, not a re-run of "now". Station-level hazards (lightning, point
+    hail flags) come directly from that snapshot's IMD records. Grid-based
+    hail/downburst come from re-fusing the satellite/radar snapshots
+    nearest that timestamp and re-running the same rule (hail_cells/
+    downburst_cells only need one fused frame, so this is meaningful).
+
+    Cloudburst is deliberately excluded: it comes from pySTEPS, which
+    always regenerates its own synthetic present-moment history regardless
+    of what timestamp is requested (see pysteps_baseline.py) — there's no
+    persisted historical radar *sequence* to re-run it against, so a
+    "replayed" cloudburst value would silently just be today's forecast
+    mislabeled with a past timestamp. Better to omit it than fake it.
+    """
+    if not _TIMESTAMP_RE.match(timestamp):
+        raise HTTPException(400, "timestamp must look like 20260918T083650Z")
+
+    imd_path = os.path.join(IMD_DIR, f"{timestamp}.json")
+    if not os.path.exists(imd_path):
+        raise HTTPException(404, f"no IMD snapshot for timestamp {timestamp}")
+
+    with open(imd_path) as f:
+        records = json.load(f)["records"]
+
+    features = []
+    for rec in (classify_station(r) for r in records):
+        if not rec["hazards"]:
+            continue
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [rec["lon"], rec["lat"]]},
+            "properties": {
+                "station_id": rec["station_id"],
+                "name": rec.get("name"),
+                "hazards": rec["hazards"],
+                "ts_severity": rec.get("ts_severity"),
+                "lightning_prob_cat": rec.get("lightning_prob_cat"),
+                "timestamp": rec.get("timestamp"),
+            },
+        })
+
+    frame = build_fused_frame_for_timestamp(timestamp)
+    if frame is not None:
+        for h in hail_cells(frame):
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [h["lon"], h["lat"]]},
+                "properties": {"hazards": [{"type": "hail", "severity": "high", "reflectivity_dbz": h["reflectivity_dbz"]}]},
+            })
+        for d in downburst_cells(frame):
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [d["lon"], d["lat"]]},
+                "properties": {"hazards": [{"type": "downburst", "severity": "high", "velocity_delta_ms": d["velocity_delta_ms"]}]},
+            })
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "timestamp": timestamp,
+        "note": "cloudburst omitted — pySTEPS has no persisted historical sequence to replay against, see docstring",
+    }
 
 
 @app.get("/health")

@@ -17,6 +17,7 @@ not this function.
 import glob
 import os
 from collections import deque
+from datetime import datetime
 
 import numpy as np
 
@@ -139,6 +140,80 @@ def build_fused_frame():
         "bbox": REGION_BBOX,
         "grid_size": GRID_SIZE,
         "sources": {"satellite": sat_path, "radar": radar_path, "lightning": lightning_path},
+    }
+
+
+TIMESTAMP_FMT = "%Y%m%dT%H%M%SZ"
+
+
+def _parse_ts(filepath):
+    base = os.path.splitext(os.path.basename(filepath))[0]
+    return datetime.strptime(base, TIMESTAMP_FMT)
+
+
+def list_imd_timestamps():
+    """Every IMD snapshot timestamp currently on disk, oldest first — the
+    real (if short-lived) historical archive Replay is built on. Each pull
+    cycle writes a new timestamped file rather than overwriting the last
+    one, so this genuinely grows over the life of the server process."""
+    files = sorted(glob.glob(os.path.join(DATA_DIR, "imd", "*.json")))
+    return [os.path.splitext(os.path.basename(f))[0] for f in files]
+
+
+def _nearest_file(directory, target_dt):
+    files = glob.glob(os.path.join(directory, "*.npz"))
+    if not files:
+        return None
+    return min(files, key=lambda f: abs((_parse_ts(f) - target_dt).total_seconds()))
+
+
+def build_fused_frame_for_timestamp(timestamp_str):
+    """Reconstruct a fusion frame for a specific historical IMD snapshot,
+    pairing it with the nearest satellite/radar snapshots by time
+    (ingestion cycles run together, so these are normally seconds apart).
+
+    This is real historical reconstruction — unlike pySTEPS' forecast
+    (which always regenerates its own synthetic present-moment history
+    regardless of what timestamp you ask about, see pysteps_baseline.py),
+    hail/downburst grid rules only need a single fused frame, so replaying
+    them for a past moment is meaningful. Cloudburst is NOT included in
+    replay for that reason (see api/main.py's /history/hazards docstring).
+    """
+    imd_path = os.path.join(DATA_DIR, "imd", f"{timestamp_str}.json")
+    if not os.path.exists(imd_path):
+        return None
+    target_dt = _parse_ts(imd_path)
+
+    sat_path = _nearest_file(os.path.join(DATA_DIR, "satellite"), target_dt)
+    radar_path = _nearest_file(os.path.join(DATA_DIR, "radar"), target_dt)
+    if sat_path is None or radar_path is None:
+        return None
+
+    import json
+
+    sat_npz = np.load(sat_path)
+    radar_npz = np.load(radar_path)
+    with open(imd_path) as f:
+        lightning_records = json.load(f)["records"]
+
+    lon_grid, lat_grid = _grid_coords()
+    reflectivity = _regrid_nearest(lon_grid, lat_grid, radar_npz["reflectivity_dbz"], lon_grid, lat_grid)
+    lightning_grid = _lightning_to_grid(lightning_records, lon_grid, lat_grid)
+
+    channels = {
+        "tir1": sat_npz["tir1"],
+        "wv": sat_npz["wv"],
+        "mwir": sat_npz["mwir"],
+        "reflectivity_dbz": reflectivity,
+        "velocity_ms": radar_npz["velocity_ms"],
+        "lightning_prob": lightning_grid,
+    }
+    return {
+        "channels": channels,
+        "bbox": REGION_BBOX,
+        "grid_size": GRID_SIZE,
+        "sources": {"satellite": sat_path, "radar": radar_path, "lightning": imd_path},
+        "timestamp": timestamp_str,
     }
 
 
