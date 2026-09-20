@@ -44,15 +44,17 @@ automatically on any fetch failure:
   `USE_LIVE_IMD`, applies on top of whichever station-data source is active. Each ingestion
   cycle listens for strikes in a short (~6s) window, so it under-samples relative to a
   persistent connection — zero strikes nearby is a normal, honest result, not a bug.
-- **Satellite** (`nowcast/ingestion/satellite_insat.py` + `copernicus_satellite.py`):
-  real Sentinel-3 SLSTR F1 thermal band for `tir1` via Copernicus Data Space Ecosystem
-  (`USE_LIVE_SATELLITE=true`), needs a free CDSE account + OAuth2 client credentials
-  (`COPERNICUS_CLIENT_ID`/`COPERNICUS_CLIENT_SECRET`). Two disclosed limitations: SLSTR has
-  no water-vapor or mid-wave-IR channel, so `wv`/`mwir` stay synthetic even when this
-  succeeds; and Sentinel-3 is polar-orbiting (~1-2 passes/day per point), not geostationary,
-  so "no recent scene over this bbox" is an expected, frequent fallback to synthetic, not a
-  bug. Verified live — real brightness temperatures (246-323K, physically plausible)
-  confirmed across Pune, Delhi, Chennai, and Guwahati.
+- **Satellite** (`nowcast/ingestion/satellite_insat.py` + two live sources, tried in
+  order): **EUMETSAT MSG SEVIRI** (`eumetsat_satellite.py`, `EUMETSAT_CONSUMER_KEY`/
+  `SECRET`) — geostationary, continuous 15min updates, actually centered on India;
+  written against `eumdac`'s real, introspected API but **not yet verified against live
+  credentials**, may need debugging. Falls back to **Copernicus Sentinel-3 SLSTR**
+  (`copernicus_satellite.py`, `COPERNICUS_CLIENT_ID`/`SECRET`) if EUMETSAT is
+  unconfigured or fails — **verified live**, real brightness temperatures (246-323K,
+  physically plausible) confirmed across Pune, Delhi, Chennai, and Guwahati. Neither
+  source has a water-vapor or mid-wave-IR equivalent, so `wv`/`mwir` stay synthetic
+  regardless of which one succeeds; Sentinel-3's polar orbit (~1-2 passes/day) means
+  "no recent scene over this bbox" is an expected, frequent fallback there, not a bug.
 
 | Layer | Real source (planned) | Current source | Notes |
 |---|---|---|---|

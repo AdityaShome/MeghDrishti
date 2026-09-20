@@ -126,6 +126,17 @@ USE_LIVE_SATELLITE = os.getenv("USE_LIVE_SATELLITE", "false").lower() == "true"
 COPERNICUS_CLIENT_ID = os.getenv("COPERNICUS_CLIENT_ID", "")
 COPERNICUS_CLIENT_SECRET = os.getenv("COPERNICUS_CLIENT_SECRET", "")
 
+# EUMETSAT Data Store + Data Tailor (MSG SEVIRI IR10.8) — continuous-coverage
+# alternative to Copernicus above: geostationary, updates every 15min, and
+# actually centered on India/Indian Ocean, vs Sentinel-3's ~1-2 passes/day.
+# Also needs a free account + API credentials (consumer key/secret from
+# api.eumetsat.int/api-key, NOT your login password). Tried first when both
+# are configured — see satellite_insat.py — since continuous coverage beats
+# occasional passes. See nowcast/ingestion/eumetsat_satellite.py for the
+# "written but not live-tested" caveats.
+EUMETSAT_CONSUMER_KEY = os.getenv("EUMETSAT_CONSUMER_KEY", "")
+EUMETSAT_CONSUMER_SECRET = os.getenv("EUMETSAT_CONSUMER_SECRET", "")
+
 # Hazard thresholds (section 4c of project.md) — documented here, not buried.
 HAIL_LIGHTNING_CAT_MIN = "cat17"       # IMD hail flag category
 CLOUDBURST_RAIN_RATE_MM_HR = 15.0      # IMD "very heavy rain" threshold

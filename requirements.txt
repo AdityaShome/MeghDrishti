@@ -17,3 +17,4 @@ eccodes
 xarray
 paho-mqtt
 tifffile
+eumdac

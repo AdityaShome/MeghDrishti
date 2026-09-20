@@ -25,11 +25,14 @@ back to synthetic automatically if the live fetch fails.
   greyscale-to-dBZ encoding, not a rendered color guess, and its India coverage is itself
   IMD's public radar network republished by a third party. Radial velocity (downburst)
   stays synthetic even with radar live, since no public source exposes it. Satellite is
-  real via Copernicus Data Space Ecosystem (`USE_LIVE_SATELLITE=true`, needs a free CDSE
-  account + OAuth2 client credentials — see `nowcast/ingestion/copernicus_satellite.py`):
-  Sentinel-3 SLSTR's F1 thermal band for `tir1`, though `wv`/`mwir` stay synthetic (no
-  Sentinel-3 equivalent) and, being polar-orbiting rather than geostationary, frequent
-  "no recent scene" fallbacks to synthetic are expected, not a bug. Each puller runs
+  real via two sources (`USE_LIVE_SATELLITE=true`, each needs its own free account):
+  EUMETSAT MSG SEVIRI (`nowcast/ingestion/eumetsat_satellite.py`, `EUMETSAT_CONSUMER_KEY`/
+  `SECRET`) is tried first — geostationary, continuous coverage, written against a real
+  API but not yet verified live — falling back to Copernicus Sentinel-3 SLSTR
+  (`nowcast/ingestion/copernicus_satellite.py`, `COPERNICUS_CLIENT_ID`/`SECRET`, verified
+  live) if unconfigured or it fails. `wv`/`mwir` stay synthetic regardless (neither source
+  has equivalent channels), and Sentinel-3 being polar-orbiting means frequent "no recent
+  scene" fallbacks to synthetic are expected there, not a bug. Each puller runs
   independently; one failing doesn't block the others (`_ingest_all` in `api/main.py`).
 - **Weather-variable grid**: `nowcast/processing/weather_fields.py` — real ECMWF Open Data
   (HRES forecast, 0.25°, updated 4x/day) via `nowcast/ingestion/ecmwf_weather.py` when
@@ -131,9 +134,12 @@ errors. Two real bugs were caught this way and fixed:
    everything else already has a real stand-in (see above).
 2. Copernicus satellite integration (`copernicus_satellite.py`) is registered and
    verified live — real Sentinel-3 SLSTR brightness temperature confirmed across
-   multiple regions. EUMETSAT Meteosat-9 (Indian Ocean Data Coverage) remains a
-   candidate upgrade — geostationary and continuously updating, unlike Sentinel-3's
-   polar orbit (~1-2 passes/day) — if continuous coverage becomes a priority.
+   multiple regions. EUMETSAT MSG SEVIRI (`eumetsat_satellite.py`) is also wired in as
+   a continuous-coverage companion (geostationary, updates every 15min, actually
+   centered on India, vs Sentinel-3's ~1-2 passes/day) and tried first when both are
+   configured — written against `eumdac`'s real, introspected API surface, but **not
+   yet exercised against live credentials**, so it may need debugging once
+   `EUMETSAT_CONSUMER_KEY`/`SECRET` are set.
 3. Once real radar CAPPI grids or RainViewer's live feed have been observed against
    actual storms, downburst/hail thresholds should be re-validated — the current
    thresholds are textbook values, never checked against data.

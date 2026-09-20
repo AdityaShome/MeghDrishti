@@ -4,14 +4,19 @@ Original plan: mdapi.py client against MOSDAC, datasetId 3DIMG_L1B_STD or
 3DIMG_L1C_ASIA_MER, parsed with h5py/satpy, reprojected with pyresample —
 not implemented, still needs MOSDAC approval (section 1).
 
-USE_LIVE_SATELLITE=true instead pulls real Sentinel-3 SLSTR thermal data
-via Copernicus Data Space Ecosystem (nowcast/ingestion/copernicus_satellite.py)
-for the `tir1` channel — needs a free CDSE account + OAuth2 client
-credentials (COPERNICUS_CLIENT_ID/SECRET in .env). `wv`/`mwir` stay
-synthetic even in live mode (SLSTR has no equivalent channels), and a
-polar-orbit revisit gap (no recent pass over the bbox) is a normal,
-expected failure that falls back to fully synthetic for that cycle — not
-a bug. Default (false): generates synthetic TIR-1 (10.8um), WV (6.7um),
+USE_LIVE_SATELLITE=true pulls real thermal IR for the `tir1` channel from
+one of two live sources, tried in order:
+1. EUMETSAT MSG SEVIRI IR10.8 (nowcast/ingestion/eumetsat_satellite.py) —
+   geostationary, continuous 15min updates, actually centered on India.
+   Needs EUMETSAT_CONSUMER_KEY/SECRET. Written against eumdac's real API
+   but not yet exercised against live credentials — may need debugging.
+2. Copernicus Sentinel-3 SLSTR F1 (nowcast/ingestion/copernicus_satellite.py)
+   — verified live, but polar-orbiting (~1-2 passes/day), so "no recent
+   scene" is a normal, expected fallback trigger, not a bug. Needs
+   COPERNICUS_CLIENT_ID/SECRET.
+`wv`/`mwir` stay synthetic regardless of which live source succeeds —
+neither exposes equivalent channels. Default (false): generates synthetic
+TIR-1 (10.8um), WV (6.7um),
 and MWIR fields correlated with the same storm cell as the synthetic radar
 (via storm_track), so a real convective signature is visible — cold cloud
 top and moist WV signal collocated with the reflectivity core, not
@@ -47,10 +52,26 @@ def _grid_coords():
 
 
 def _fetch_live():
-    from nowcast.ingestion.copernicus_satellite import fetch_tir1_grid
+    from nowcast.configs.settings import EUMETSAT_CONSUMER_KEY, EUMETSAT_CONSUMER_SECRET
 
-    tir1 = fetch_tir1_grid(get_region_bbox(), GRID_SIZE)
-    # wv/mwir have no real Sentinel-3 SLSTR equivalent — reuse the synthetic
+    bbox = get_region_bbox()
+    tir1 = None
+    if EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET:
+        try:
+            from nowcast.ingestion.eumetsat_satellite import fetch_ir108_grid
+
+            tir1 = fetch_ir108_grid(bbox, GRID_SIZE)
+            print("[satellite_insat] tir1 from EUMETSAT MSG SEVIRI (real, continuous coverage)")
+        except Exception as exc:
+            print(f"[satellite_insat] EUMETSAT fetch failed ({exc}), trying Copernicus", file=sys.stderr)
+
+    if tir1 is None:
+        from nowcast.ingestion.copernicus_satellite import fetch_tir1_grid
+
+        tir1 = fetch_tir1_grid(bbox, GRID_SIZE)
+        print("[satellite_insat] tir1 from Copernicus Sentinel-3 SLSTR (real)")
+
+    # wv/mwir have no real equivalent in either source — reuse the synthetic
     # mock for just those two channels rather than leaving them blank, so
     # the fusion grid still has all three channels populated.
     _, wv, mwir = _fetch_mock()
