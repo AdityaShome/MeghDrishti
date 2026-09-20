@@ -154,6 +154,38 @@ def sample_point(lat, lon, t_min=0):
     }
 
 
+def _stat(arr):
+    return {"min": round(float(arr.min()), 1), "mean": round(float(arr.mean()), 1), "max": round(float(arr.max()), 1)}
+
+
+def area_stats(bbox, t_min=0):
+    """Min/mean/max temperature/humidity/wind/pressure over a user-drawn
+    area (drag-select), not just a single point — backs the area-inspect
+    panel. Masks generate_grid()'s cells to whatever falls inside `bbox`;
+    if the drawn area doesn't overlap WIDE_BBOX at all, falls back to a
+    single center-point sample so the panel still shows something instead
+    of empty stats."""
+    lon_min, lat_min, lon_max, lat_max = bbox
+    grid = generate_grid(t_min)
+    glon_min, glat_min, glon_max, glat_max = grid["bbox"]
+    n = grid["grid_size"]
+    lons = np.linspace(glon_min, glon_max, n)
+    lats = np.linspace(glat_min, glat_max, n)
+    lon_grid, lat_grid = np.meshgrid(lons, lats)
+    mask = (lon_grid >= lon_min) & (lon_grid <= lon_max) & (lat_grid >= lat_min) & (lat_grid <= lat_max)
+
+    if not mask.any():
+        center = sample_point((lat_min + lat_max) / 2, (lon_min + lon_max) / 2, t_min)
+        return {k: {"min": v, "mean": v, "max": v} for k, v in center.items()}
+
+    return {
+        "temperature_c": _stat(grid["temperature_c"][mask]),
+        "humidity_pct": _stat(grid["humidity_pct"][mask]),
+        "wind_speed_ms": _stat(grid["wind_speed_ms"][mask]),
+        "pressure_hpa": _stat(grid["pressure_hpa"][mask]),
+    }
+
+
 def wind_vector_points(stride=4, t_min=0):
     """Sparse sample of wind vectors for arrow-symbol rendering (dense grids
     of arrows are unreadable — this thins WIDE_GRID_SIZE down by `stride`)."""

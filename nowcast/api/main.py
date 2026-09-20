@@ -465,6 +465,41 @@ def region_forecast(lat: float, lon: float, lead_time: int = Query(0, ge=0, le=3
     return {**sample, "lead_minutes": lead_time, "cloudburst_rainrate_mm_hr": cloudburst_rainrate}
 
 
+@app.get("/area-forecast")
+def area_forecast(
+    lon_min: float,
+    lat_min: float,
+    lon_max: float,
+    lat_max: float,
+    lead_time: int = Query(0, ge=0, le=360),
+):
+    """Min/mean/max current-and-forecast stats over a user drag-selected
+    area, not a single point (see /region-forecast for that) — backs the
+    map's drag-to-select-area tool. Same real-vs-synthetic weather_fields.py
+    backend as /region-forecast. Also includes the pySTEPS cloudburst
+    rain-rate max/mean over whatever part of the area falls inside the
+    storm-scale grid (REGION_BBOX), since that's a different, smaller bbox
+    than the weather-variable grid — None if the area doesn't overlap it."""
+    bbox = (lon_min, lat_min, lon_max, lat_max)
+    stats = weather_fields.area_stats(bbox, lead_time)
+
+    cloudburst_stats = None
+    fc = _refresh_forecast()
+    flon_min, flat_min, flon_max, flat_max = fc["bbox"]
+    import numpy as np
+
+    lons = np.linspace(flon_min, flon_max, fc["grid_size"])
+    lats = np.linspace(flat_min, flat_max, fc["grid_size"])
+    lon_grid, lat_grid = np.meshgrid(lons, lats)
+    mask = (lon_grid >= lon_min) & (lon_grid <= lon_max) & (lat_grid >= lat_min) & (lat_grid <= lat_max)
+    if mask.any():
+        idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
+        vals = fc["rainrate_forecast"][idx][mask]
+        cloudburst_stats = {"min": round(float(vals.min()), 1), "mean": round(float(vals.mean()), 1), "max": round(float(vals.max()), 1)}
+
+    return {**stats, "cloudburst_rainrate_mm_hr": cloudburst_stats, "lead_minutes": lead_time, "bbox": bbox}
+
+
 _BHUVAN_WMS = "https://bhuvan-vec1.nrsc.gov.in/bhuvan/gwc/service/wms/"
 
 

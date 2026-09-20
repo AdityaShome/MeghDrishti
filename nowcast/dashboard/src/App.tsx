@@ -7,9 +7,11 @@ import { WeatherRasterLayers } from "./map/layers/WeatherRasterLayers";
 import { WindArrows } from "./map/layers/WindArrows";
 import { ModelFrameLayer } from "./map/layers/ModelFrameLayer";
 import { RegionBox } from "./map/layers/RegionBox";
+import { AreaBox } from "./map/layers/AreaBox";
 import { WmsBaseLayer } from "./map/layers/WmsBaseLayer";
 import { WmsOverlayLayers } from "./map/layers/WmsOverlayLayers";
 import { useRegionClick } from "./map/useRegionClick";
+import { useAreaDrag } from "./map/useAreaDrag";
 
 import { TopBar } from "./components/TopBar";
 import { Banner } from "./components/Banner";
@@ -22,7 +24,8 @@ import { RightSidebar } from "./components/RightSidebar";
 import { BottomPanel } from "./components/BottomPanel";
 import { LayersDrawer } from "./components/LayersDrawer";
 import { RegionFloating } from "./components/RegionFloating";
-import { Play, Pause } from "lucide-react";
+import { AreaFloating } from "./components/AreaFloating";
+import { Play, Pause, Frame } from "lucide-react";
 
 import { api, API_BASE } from "./api";
 import {
@@ -34,7 +37,7 @@ import {
   useWeatherLayers,
   useWindVectors,
 } from "./hooks/useNowcastData";
-import type { ModelId, RegionForecast, HazardsResponse, RawLayer, WeatherLayer, WindPoint, NowcastFrame } from "./types";
+import type { ModelId, RegionForecast, HazardsResponse, RawLayer, WeatherLayer, WindPoint, NowcastFrame, AreaForecast, Bbox } from "./types";
 
 type VarId = "none" | "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall";
 
@@ -56,6 +59,11 @@ function Dashboard() {
   const [region, setRegion] = useState<{ lat: number; lon: number } | null>(null);
   const [regionLeadMinutes, setRegionLeadMinutes] = useState(0);
   const [regionReading, setRegionReading] = useState<RegionForecast | null>(null);
+  const [areaSelectMode, setAreaSelectMode] = useState(false);
+  const [drawingArea, setDrawingArea] = useState<Bbox | null>(null);
+  const [area, setArea] = useState<Bbox | null>(null);
+  const [areaLeadMinutes, setAreaLeadMinutes] = useState(0);
+  const [areaReading, setAreaReading] = useState<AreaForecast | null>(null);
   const [activePanel, setActivePanel] = useState<ActivePanel>("none");
   const [isPlaying, setIsPlaying] = useState(false);
   const [apiUnreachable, setApiUnreachable] = useState(false);
@@ -130,9 +138,11 @@ function Dashboard() {
     return () => clearInterval(id);
   }, [isPlaying, model]);
 
-  useRegionClick((lat, lon) => selectRegion(lat, lon));
+  useRegionClick(!areaSelectMode, (lat, lon) => selectRegion(lat, lon));
+  useAreaDrag(areaSelectMode, setDrawingArea, (bbox) => selectArea(bbox));
 
   async function selectRegion(lat: number, lon: number) {
+    setArea(null);
     setRegion({ lat, lon });
     setRegionLeadMinutes(0);
     setRegionReading(null);
@@ -151,6 +161,39 @@ function Dashboard() {
     try {
       const reading = await api.regionForecast(region.lat, region.lon, m);
       setRegionReading(reading);
+    } catch {
+      /* keep last known reading on transient failure */
+    }
+  }
+
+  async function selectArea(bbox: Bbox) {
+    setRegion(null);
+    setAreaSelectMode(false);
+    setArea(bbox);
+    setAreaLeadMinutes(0);
+    setAreaReading(null);
+    const [lonMin, latMin, lonMax, latMax] = bbox;
+    map?.fitBounds(
+      [
+        [lonMin, latMin],
+        [lonMax, latMax],
+      ],
+      { padding: 80, duration: 800 }
+    );
+    try {
+      const reading = await api.areaForecast(bbox, 0);
+      setAreaReading(reading);
+    } catch {
+      // area panel just stays in its loading state; not worth a banner for this
+    }
+  }
+
+  async function onAreaLeadChange(m: number) {
+    setAreaLeadMinutes(m);
+    if (!area) return;
+    try {
+      const reading = await api.areaForecast(area, m);
+      setAreaReading(reading);
     } catch {
       /* keep last known reading on transient failure */
     }
@@ -212,6 +255,8 @@ function Dashboard() {
               modelFrame={nowcastFrame.data ?? null}
               modelFrameVisible={modelFrameVisible}
               region={region}
+              drawingArea={drawingArea}
+              area={area}
               baseMapId={baseMapId}
               activeOverlayIds={activeOverlayIds}
             />
@@ -254,6 +299,17 @@ function Dashboard() {
                   onClick={() => setBaseMapId((v) => (v === "dem" ? "none" : "dem"))}
                 >
                   <div className={`status-dot ${baseMapId === "dem" ? "ok" : ""}`} /> Topography
+                </button>
+                <button
+                  className={`layer-btn ${areaSelectMode ? "active" : ""}`}
+                  onClick={() => {
+                    setRegion(null);
+                    setArea(null);
+                    setAreaSelectMode((v) => !v);
+                  }}
+                  title="Drag on the map to select an area and see its current + forecast stats"
+                >
+                  <Frame size={12} /> {areaSelectMode ? "Drag to select…" : "Select area"}
                 </button>
               </div>
 
@@ -327,8 +383,19 @@ function Dashboard() {
                 onLeadChange={onRegionLeadChange}
                 onClose={() => setRegion(null)}
               />
+            ) : area ? (
+              <AreaFloating
+                bbox={area}
+                reading={areaReading}
+                leadMinutes={areaLeadMinutes}
+                onLeadChange={onAreaLeadChange}
+                hazardCount={hazardsInBbox(hazards.data, area)}
+                onClose={() => setArea(null)}
+              />
             ) : (
-              <div className="region-hint">Click anywhere on the map to inspect a region</div>
+              <div className="region-hint">
+                {areaSelectMode ? "Drag on the map to draw an area" : "Click to inspect a point, or use Select area to drag-draw a region"}
+              </div>
             )}
 
             <Banner message={banner} />
@@ -363,6 +430,8 @@ function MapLayers(props: {
   modelFrame: NowcastFrame | null;
   modelFrameVisible: boolean;
   region: { lat: number; lon: number } | null;
+  drawingArea: Bbox | null;
+  area: Bbox | null;
   baseMapId: string;
   activeOverlayIds: Set<string>;
 }) {
@@ -376,9 +445,19 @@ function MapLayers(props: {
       <WindArrows points={props.windPoints} visible={props.activeVar === "wind_speed"} />
       <ModelFrameLayer frame={props.modelFrame} visible={props.modelFrameVisible} />
       <RegionBox region={props.region} />
+      <AreaBox drawing={props.drawingArea} selected={props.area} />
       <ReferenceLabels />
     </>
   );
+}
+
+function hazardsInBbox(hazards: HazardsResponse | null, bbox: Bbox): number {
+  if (!hazards) return 0;
+  const [lonMin, latMin, lonMax, latMax] = bbox;
+  return hazards.features.filter((f) => {
+    const [lon, lat] = f.geometry.coordinates;
+    return lon >= lonMin && lon <= lonMax && lat >= latMin && lat <= latMax;
+  }).length;
 }
 
 export default function App() {

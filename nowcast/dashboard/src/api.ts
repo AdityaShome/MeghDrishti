@@ -11,6 +11,8 @@ import type {
   HistoryTimestampsResponse,
   HistoryHazardsResponse,
   RegionsResponse,
+  AreaForecast,
+  Bbox,
 } from "./types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
@@ -54,6 +56,12 @@ export const api = {
   historyHazards: (timestamp: string) => getJSON<HistoryHazardsResponse>(`/history/hazards?timestamp=${timestamp}`),
   regions: () => getJSON<RegionsResponse>("/regions"),
   setRegion: (key: string) => postJSON<{ active: string; name: string }>(`/regions/${key}`),
+  areaForecast: (bbox: Bbox, leadMinutes: number) => {
+    const [lonMin, latMin, lonMax, latMax] = bbox;
+    return getJSON<AreaForecast>(
+      `/area-forecast?lon_min=${lonMin}&lat_min=${latMin}&lon_max=${lonMax}&lat_max=${latMax}&lead_time=${leadMinutes}`
+    );
+  },
 };
 
 export { ApiError };

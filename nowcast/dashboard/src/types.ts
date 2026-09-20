@@ -103,6 +103,22 @@ export interface RegionForecast {
   cloudburst_rainrate_mm_hr: number | null;
 }
 
+export interface AreaStat {
+  min: number;
+  mean: number;
+  max: number;
+}
+
+export interface AreaForecast {
+  temperature_c: AreaStat;
+  humidity_pct: AreaStat;
+  wind_speed_ms: AreaStat;
+  pressure_hpa: AreaStat;
+  cloudburst_rainrate_mm_hr: AreaStat | null;
+  lead_minutes: number;
+  bbox: Bbox;
+}
+
 export type ModelId = "pysteps" | "dgmr";
 
 export interface ForecastSummary {
