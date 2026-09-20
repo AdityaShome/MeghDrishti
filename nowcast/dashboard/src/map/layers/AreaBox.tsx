@@ -18,10 +18,29 @@ function bboxPolygon(bbox: Bbox): FeatureCollection {
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
+const DEFAULT_COLOR = "#3fb6ff";
+
 /** User drag-drawn area selection — a live dashed preview while dragging,
  * then a solid box once confirmed. Separate source/layer from RegionBox
- * (the fixed-size click-to-inspect box) since both can't share one style. */
-export function AreaBox({ drawing, selected }: { drawing: Bbox | null; selected: Bbox | null }) {
+ * (the fixed-size click-to-inspect box) since both can't share one style.
+ *
+ * `fillColor`/`fillOpacity` let the box actually show something instead of
+ * reading as an empty rectangle when there's no hazard inside it — the
+ * area-inspect panel can pick a weather variable (temp/humidity/wind/
+ * pressure) and color the box by that variable's average, same palette as
+ * the main map's weather overlay, so "no hazards here" doesn't look like
+ * "nothing happened". */
+export function AreaBox({
+  drawing,
+  selected,
+  fillColor,
+  fillOpacity,
+}: {
+  drawing: Bbox | null;
+  selected: Bbox | null;
+  fillColor?: string;
+  fillOpacity?: number;
+}) {
   const { map, ready } = useMeghMap();
 
   useEffect(() => {
@@ -31,13 +50,13 @@ export function AreaBox({ drawing, selected }: { drawing: Bbox | null; selected:
       id: "area-box-fill",
       type: "fill",
       source: "area-box",
-      paint: { "fill-color": "#3fb6ff", "fill-opacity": 0.08 },
+      paint: { "fill-color": DEFAULT_COLOR, "fill-opacity": 0.08 },
     });
     map.addLayer({
       id: "area-box-line",
       type: "line",
       source: "area-box",
-      paint: { "line-color": "#3fb6ff", "line-width": 2, "line-opacity": 0.9 },
+      paint: { "line-color": DEFAULT_COLOR, "line-width": 2, "line-opacity": 0.9 },
     });
   }, [map, ready]);
 
@@ -51,6 +70,12 @@ export function AreaBox({ drawing, selected }: { drawing: Bbox | null; selected:
       map.setPaintProperty("area-box-line", "line-dasharray", drawing ? [2, 2] : [1, 0]);
     }
   }, [map, ready, drawing, selected]);
+
+  useEffect(() => {
+    if (!map || !ready || !map.getLayer("area-box-fill")) return;
+    map.setPaintProperty("area-box-fill", "fill-color", fillColor ?? DEFAULT_COLOR);
+    map.setPaintProperty("area-box-fill", "fill-opacity", drawing ? 0.08 : (fillOpacity ?? 0.08));
+  }, [map, ready, fillColor, fillOpacity, drawing]);
 
   return null;
 }

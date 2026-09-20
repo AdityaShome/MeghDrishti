@@ -24,7 +24,8 @@ import { RightSidebar } from "./components/RightSidebar";
 import { BottomPanel } from "./components/BottomPanel";
 import { LayersDrawer } from "./components/LayersDrawer";
 import { RegionFloating } from "./components/RegionFloating";
-import { AreaFloating } from "./components/AreaFloating";
+import { AreaFloating, type AreaVarId } from "./components/AreaFloating";
+import { VAR_COLOR_STOPS, VAR_RANGE, lerpColor } from "./lib/colors";
 import { Play, Pause, Frame } from "lucide-react";
 
 import { api, API_BASE, ApiError } from "./api";
@@ -66,6 +67,7 @@ function Dashboard() {
   const [areaReading, setAreaReading] = useState<AreaForecast | null>(null);
   const [areaError, setAreaError] = useState<string | null>(null);
   const [areaLoading, setAreaLoading] = useState(false);
+  const [areaVar, setAreaVar] = useState<AreaVarId>("none");
   const [activePanel, setActivePanel] = useState<ActivePanel>("none");
   const [isPlaying, setIsPlaying] = useState(false);
   const [apiUnreachable, setApiUnreachable] = useState(false);
@@ -226,6 +228,26 @@ function Dashboard() {
   }
 
   const activeMeta = activeVar !== "none" ? displayedWeatherLayers.find((l) => l.id === activeVar) ?? null : null;
+
+  // Colors the selected-area box by whichever variable the area panel picked
+  // (temp/humidity/wind/pressure), using its mean over the area — same
+  // palette/range as the main weather overlay's legend — so "no hazards
+  // here" reads as "here's the actual weather", not an empty rectangle.
+  const AREA_VAR_FIELD = {
+    temperature: "temperature_c",
+    humidity: "humidity_pct",
+    wind_speed: "wind_speed_ms",
+    pressure: "pressure_hpa",
+  } as const;
+  let areaFillColor: string | undefined;
+  let areaFillOpacity: number | undefined;
+  if (areaVar !== "none" && areaReading) {
+    const stat = areaReading[AREA_VAR_FIELD[areaVar]];
+    const [vmin, vmax] = VAR_RANGE[areaVar];
+    const t = (stat.mean - vmin) / (vmax - vmin);
+    areaFillColor = lerpColor(VAR_COLOR_STOPS[areaVar], t);
+    areaFillOpacity = 0.45;
+  }
   const dgmrUnavailable = forecastSummary.data?.available === false;
   const apiOk = !apiUnreachable && !hazards.error;
   const banner =
@@ -274,6 +296,8 @@ function Dashboard() {
               region={region}
               drawingArea={drawingArea}
               area={area}
+              areaFillColor={areaFillColor}
+              areaFillOpacity={areaFillOpacity}
               baseMapId={baseMapId}
               activeOverlayIds={activeOverlayIds}
             />
@@ -409,6 +433,8 @@ function Dashboard() {
                 leadMinutes={areaLeadMinutes}
                 onLeadChange={onAreaLeadChange}
                 hazardCount={hazardsInBbox(hazards.data, area)}
+                areaVar={areaVar}
+                onAreaVarChange={setAreaVar}
                 onClose={() => setArea(null)}
               />
             ) : (
@@ -451,6 +477,8 @@ function MapLayers(props: {
   region: { lat: number; lon: number } | null;
   drawingArea: Bbox | null;
   area: Bbox | null;
+  areaFillColor?: string;
+  areaFillOpacity?: number;
   baseMapId: string;
   activeOverlayIds: Set<string>;
 }) {
@@ -464,7 +492,7 @@ function MapLayers(props: {
       <WindArrows points={props.windPoints} visible={props.activeVar === "wind_speed"} />
       <ModelFrameLayer frame={props.modelFrame} visible={props.modelFrameVisible} />
       <RegionBox region={props.region} />
-      <AreaBox drawing={props.drawingArea} selected={props.area} />
+      <AreaBox drawing={props.drawingArea} selected={props.area} fillColor={props.areaFillColor} fillOpacity={props.areaFillOpacity} />
       <ReferenceLabels />
     </>
   );

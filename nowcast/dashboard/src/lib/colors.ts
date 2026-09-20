@@ -28,6 +28,16 @@ export const VAR_COLOR_STOPS: Record<string, [string, string, string]> = {
   rainfall: ["#0b1e3d", "#2fb0e0", "#f0b429"],
 };
 
+// Mirrors the vmin/vmax the backend uses for /weather-layers (main.py) so a
+// value colored here (e.g. the area-select box fill) reads consistently
+// with the main map overlay's legend, even when that overlay isn't active.
+export const VAR_RANGE: Record<string, [number, number]> = {
+  temperature: [18, 34],
+  humidity: [0, 100],
+  wind_speed: [0, 18],
+  pressure: [995, 1015],
+};
+
 export function lerpColor(stops: readonly string[], t: number): string {
   const clamped = Math.max(0, Math.min(1, t));
   const seg = clamped * (stops.length - 1);
