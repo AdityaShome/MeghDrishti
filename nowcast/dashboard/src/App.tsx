@@ -49,11 +49,17 @@ function Dashboard() {
 
   const [leadMinutes, setLeadMinutes] = useState(0);
   const [model, setModel] = useState<ModelId>("pysteps");
-  const [satelliteVisible, setSatelliteVisible] = useState(true);
+  // Satellite and the pySTEPS/DGMR model-frame overlay are still tied to
+  // the small per-region demo bbox (no real all-India single-request
+  // satellite source exists, and the model frame is inherently a
+  // per-region forecast) — defaulting them off keeps the main view free of
+  // any Pune-sized (or whichever city's) box unless someone explicitly
+  // opts into the per-region demo layers via their toggles.
+  const [satelliteVisible, setSatelliteVisible] = useState(false);
   const [radarVisible, setRadarVisible] = useState(true);
   const [heatmapsVisible, setHeatmapsVisible] = useState(true);
   const [stationsVisible, setStationsVisible] = useState(true);
-  const [modelFrameVisible, setModelFrameVisible] = useState(true);
+  const [modelFrameVisible, setModelFrameVisible] = useState(false);
   const [activeVar, setActiveVar] = useState<VarId>("none");
   const [baseMapId, setBaseMapId] = useState("none");
   const [activeOverlayIds, setActiveOverlayIds] = useState<Set<string>>(new Set());
@@ -103,21 +109,20 @@ function Dashboard() {
     if (!hazards.error) setLastUpdated(new Date());
   }, [hazards.error, hazards.data]);
 
-  // Center the camera on whichever demo region is currently active
-  // (settings.py REGIONS / RegionPicker in LeftSidebar) instead of always
-  // defaulting to Pune — runs once the map's ready and doesn't fight the
-  // user's own panning/zooming afterward.
+  // Default camera shows all of India, matching the default hazard/radar
+  // view (both real, all-India — see hazard_india.py) — not whichever demo
+  // city happens to be selected in the region picker, which only matters
+  // for the separate Forecast/Replay pySTEPS/DGMR pages now. Runs once the
+  // map's ready and doesn't fight the user's own panning/zooming afterward.
   useEffect(() => {
     if (!map) return;
-    api
-      .regions()
-      .then((r) => {
-        const active = r.options.find((o) => o.key === r.active);
-        if (!active) return;
-        const [lonMin, latMin, lonMax, latMax] = active.bbox;
-        map.jumpTo({ center: [(lonMin + lonMax) / 2, (latMin + latMax) / 2], zoom: 10.2 });
-      })
-      .catch(() => {});
+    map.fitBounds(
+      [
+        [68.0, 6.5],
+        [97.5, 37.0],
+      ],
+      { padding: 40, duration: 0 }
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map]);
 
