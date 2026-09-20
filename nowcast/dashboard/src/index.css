@@ -440,3 +440,28 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .maplibregl-popup-tip { border-top-color: var(--panel-border) !important; border-bottom-color: var(--panel-border) !important; }
 
+/* ---------- Glowing, pulsing hazard markers ---------- */
+/* A solid dot plus two expanding-ring echoes, offset in time so a new ring
+   launches every ~0.9s — reads as "live event detected here", not a static
+   pin. --hazard-color is set per-marker (see HazardLayers.tsx) so one set
+   of keyframes covers hail/downburst/cloudburst/lightning's own colors. */
+.hazard-marker { position: relative; width: 18px; height: 18px; pointer-events: auto; cursor: pointer; }
+.hazard-marker-dot {
+  position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--hazard-color); box-shadow: 0 0 10px 2px var(--hazard-color), 0 0 2px #fff;
+  border: 1.5px solid rgba(255,255,255,0.85);
+}
+.hazard-marker-ring {
+  position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--hazard-color);
+  animation: hazard-pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+.hazard-marker-ring-delay { animation-delay: 0.9s; }
+.hazard-marker-high .hazard-marker-dot { box-shadow: 0 0 14px 4px var(--hazard-color), 0 0 3px #fff; }
+@keyframes hazard-pulse-ring {
+  0% { width: 10px; height: 10px; opacity: 0.9; }
+  100% { width: 34px; height: 34px; opacity: 0; }
+}
+

@@ -1,23 +1,42 @@
 import { useEffect, useRef } from "react";
-import { Popup, type GeoJSONSource } from "maplibre-gl";
+import { Marker, Popup, type GeoJSONSource } from "maplibre-gl";
 import type { Point } from "geojson";
 import { useMeghMap } from "../MapProvider";
-import { colorForHazards, HAZARD_COLOR_RGB } from "../../lib/colors";
-import type { HazardsResponse, HazardFeature } from "../../types";
-
-const HEAT_SPECS = [
-  { id: "hail", color: HAZARD_COLOR_RGB.hail, weightField: "reflectivity_dbz", weightMax: 65 },
-  { id: "downburst", color: HAZARD_COLOR_RGB.downburst, weightField: "velocity_delta_ms", weightMax: 45 },
-  { id: "cloudburst", color: HAZARD_COLOR_RGB.cloudburst, weightField: "rainrate_mm_hr", weightMax: 120 },
-] as const;
+import { colorForHazards, HAZARD_COLOR } from "../../lib/colors";
+import type { HazardsResponse, HazardFeature, Hazard, HazardType } from "../../types";
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] as HazardFeature[] };
 
-/** Grid-cell hazards render as heatmaps (density, weighted by the underlying
- * physical value) instead of stacked point markers — hundreds of overlapping
- * circles for a single storm reads as fake; a heatmap reads like a real
- * radar/hazard product. Station-level hazards (lightning, point hail flags)
- * are genuinely discrete points, so those stay as clickable circle markers. */
+function hazardDetail(h: Hazard): string {
+  if (h.reflectivity_dbz !== undefined) return `${h.reflectivity_dbz} dBZ`;
+  if (h.velocity_delta_ms !== undefined) return `${h.velocity_delta_ms} m/s`;
+  if (h.rainrate_mm_hr !== undefined) return `${h.rainrate_mm_hr} mm/hr`;
+  return "";
+}
+
+/** A glowing, pulsing ring animation (CSS, GPU-composited) around a solid
+ * dot — reads as "a real, live event just detected here" rather than a
+ * static marker. Built as an HTML Marker (not a MapLibre circle layer)
+ * specifically because CSS keyframe animation is what gives the pulse for
+ * free; a paint-property animation would need its own rAF loop per frame.
+ * This replaced a heatmap here: that made sense for the old synthetic data
+ * (100+ overlapping grid cells forming one storm shape), but real hail/
+ * lightning right now is usually a handful of scattered points, which a
+ * heatmap renders as faint, washed-out blobs instead of something that
+ * actually draws the eye. */
+function buildMarkerElement(type: HazardType, severity: string): HTMLDivElement {
+  const color = HAZARD_COLOR[type];
+  const el = document.createElement("div");
+  el.className = `hazard-marker hazard-marker-${severity}`;
+  el.style.setProperty("--hazard-color", color);
+  el.innerHTML = `
+    <span class="hazard-marker-ring"></span>
+    <span class="hazard-marker-ring hazard-marker-ring-delay"></span>
+    <span class="hazard-marker-dot"></span>
+  `;
+  return el;
+}
+
 export function HazardLayers({
   hazards,
   heatmapsVisible = true,
@@ -29,40 +48,13 @@ export function HazardLayers({
 }) {
   const { map, ready } = useMeghMap();
   const popupRef = useRef<Popup | null>(null);
+  const markersRef = useRef<Marker[]>([]);
+  const visibleRef = useRef(heatmapsVisible);
+  visibleRef.current = heatmapsVisible;
 
   useEffect(() => {
     if (!map || !ready) return;
     if (map.getSource("stations")) return; // already set up
-
-    for (const spec of HEAT_SPECS) {
-      map.addSource(`cells-${spec.id}`, { type: "geojson", data: EMPTY_FC });
-      map.addLayer({
-        id: `heat-${spec.id}`,
-        type: "heatmap",
-        source: `cells-${spec.id}`,
-        paint: {
-          "heatmap-weight": ["interpolate", ["linear"], ["get", spec.weightField], 0, 0, spec.weightMax, 1],
-          "heatmap-intensity": 0.8,
-          // A flat pixel radius saturates into a solid blob when the
-          // storm-scale box (fixed ~50km / GRID_SIZE=64 cells) is viewed
-          // zoomed out enough that its ~150-220 overlapping cells compress
-          // into a few dozen screen pixels — this scales the radius down at
-          // low zoom so it reads as a soft glow instead of a solid block,
-          // and up at high zoom so individual cells still blend smoothly.
-          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 7, 4, 11, 14, 14, 26, 17, 42],
-          "heatmap-opacity": 0.75,
-          "heatmap-color": [
-            "interpolate",
-            ["linear"],
-            ["heatmap-density"],
-            0, `rgba(${spec.color},0)`,
-            0.3, `rgba(${spec.color},0.35)`,
-            0.6, `rgba(${spec.color},0.65)`,
-            1, `rgba(${spec.color},0.95)`,
-          ],
-        },
-      });
-    }
 
     map.addSource("stations", { type: "geojson", data: EMPTY_FC });
     map.addLayer({
@@ -106,8 +98,10 @@ export function HazardLayers({
   useEffect(() => {
     if (!map || !ready || !hazards) return;
 
+    for (const m of markersRef.current) m.remove();
+    markersRef.current = [];
+
     const stationFeatures: HazardFeature[] = [];
-    const cellsByType: Record<string, HazardFeature[]> = { hail: [], downburst: [], cloudburst: [] };
 
     for (const f of hazards.features) {
       if (f.properties.station_id) {
@@ -120,31 +114,39 @@ export function HazardLayers({
             hazards_json: JSON.stringify(f.properties.hazards),
           },
         });
-      } else {
-        for (const h of f.properties.hazards) {
-          if (cellsByType[h.type]) {
-            cellsByType[h.type].push({ ...f, properties: { ...f.properties, ...h } });
-          }
-        }
+        continue;
+      }
+
+      const [lon, lat] = f.geometry.coordinates;
+      for (const h of f.properties.hazards) {
+        const el = buildMarkerElement(h.type, h.severity);
+        el.style.display = visibleRef.current ? "" : "none";
+        el.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const detail = hazardDetail(h);
+          popupRef.current?.remove();
+          popupRef.current = new Popup({ closeButton: true, offset: 12 })
+            .setLngLat([lon, lat])
+            .setHTML(
+              `<div class="popup-title">${h.type[0].toUpperCase()}${h.type.slice(1)}</div>
+               <div class="popup-row">Severity: ${h.severity}</div>
+               ${detail ? `<div class="popup-row">${detail}</div>` : ""}`,
+            )
+            .addTo(map);
+        });
+        const marker = new Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
+        markersRef.current.push(marker);
       }
     }
 
     (map.getSource("stations") as GeoJSONSource)?.setData({ type: "FeatureCollection", features: stationFeatures });
-    for (const type of Object.keys(cellsByType)) {
-      (map.getSource(`cells-${type}`) as GeoJSONSource)?.setData({
-        type: "FeatureCollection",
-        features: cellsByType[type],
-      });
-    }
   }, [map, ready, hazards]);
 
   useEffect(() => {
-    if (!map) return;
-    for (const spec of HEAT_SPECS) {
-      const id = `heat-${spec.id}`;
-      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", heatmapsVisible ? "visible" : "none");
+    for (const m of markersRef.current) {
+      m.getElement().style.display = heatmapsVisible ? "" : "none";
     }
-  }, [map, heatmapsVisible]);
+  }, [heatmapsVisible]);
 
   useEffect(() => {
     if (!map) return;
@@ -152,6 +154,12 @@ export function HazardLayers({
       if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", stationsVisible ? "visible" : "none");
     }
   }, [map, stationsVisible]);
+
+  useEffect(() => {
+    return () => {
+      for (const m of markersRef.current) m.remove();
+    };
+  }, []);
 
   return null;
 }
