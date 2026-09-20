@@ -26,7 +26,7 @@ import xarray as xr
 from ecmwf.opendata import Client
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from nowcast.configs.settings import WIDE_BBOX, WIDE_GRID_SIZE
+from nowcast.configs.settings import get_wide_bbox, WIDE_GRID_SIZE
 
 # The client's own defaults (maximum_retries=500, retry_after=120s) are
 # built for a long-running batch job, not a request that has to fail fast
@@ -36,7 +36,10 @@ from nowcast.configs.settings import WIDE_BBOX, WIDE_GRID_SIZE
 # 3 retries with a much shorter backoff still tolerates real transient
 # failures without ever looking like a permanent hang.
 _CLIENT = Client(source="ecmwf", maximum_retries=3, retry_after=5)
-_CACHE = {}  # step (int hours) -> (fetched_at_epoch, grid_dict)
+_CACHE = {}  # (step, wide_bbox) -> (fetched_at_epoch, grid_dict) — keyed by
+# bbox too since get_wide_bbox() now follows the active region, not a
+# fixed constant; serving a cached Maharashtra grid while viewing Delhi
+# would be wrong instead of just stale.
 _CACHE_TTL_SECONDS = 3 * 3600  # well under ECMWF's 6h update cadence
 _FETCH_TIMEOUT_SECONDS = 25  # the package sets no HTTP timeout of its own —
 # a real network hang (not just an error) would otherwise block forever
@@ -72,7 +75,7 @@ def _saturation_vapor_pressure(temp_c):
     return 6.112 * np.exp((17.62 * temp_c) / (243.12 + temp_c))
 
 
-def _fetch_and_process(step):
+def _fetch_and_process(step, wide_bbox):
     tmp_dir = tempfile.mkdtemp(prefix="ecmwf_")
     t_path = os.path.join(tmp_dir, "t2.grib2")
     w_path = os.path.join(tmp_dir, "wind10.grib2")
@@ -88,7 +91,7 @@ def _fetch_and_process(step):
     w_ds = xr.open_dataset(w_path, engine="cfgrib")
     p_ds = xr.open_dataset(p_path, engine="cfgrib")
 
-    lon_min, lat_min, lon_max, lat_max = WIDE_BBOX
+    lon_min, lat_min, lon_max, lat_max = wide_bbox
     pad = 0.5  # margin so interpolation has real neighbors at the grid edges
     t_sub = _subset(t_ds, lon_min - pad, lat_min - pad, lon_max + pad, lat_max + pad)
     w_sub = _subset(w_ds, lon_min - pad, lat_min - pad, lon_max + pad, lat_max + pad)
@@ -118,7 +121,7 @@ def _fetch_and_process(step):
         "wind_speed_ms": wind_speed_ms.astype(np.float32),
         "wind_dir_deg": wind_dir_deg.astype(np.float32),
         "pressure_hpa": pressure_hpa.astype(np.float32),
-        "bbox": WIDE_BBOX,
+        "bbox": wide_bbox,
         "grid_size": WIDE_GRID_SIZE,
         "source": "ecmwf-opendata",
         "step_hours": step,
@@ -133,7 +136,9 @@ def fetch_grid(lead_minutes=0):
     every other live-data source in this repo.
     """
     step = _nearest_step(lead_minutes)
-    cached = _CACHE.get(step)
+    wide_bbox = get_wide_bbox()
+    cache_key = (step, wide_bbox)
+    cached = _CACHE.get(cache_key)
     if cached and (time.time() - cached[0]) < _CACHE_TTL_SECONDS:
         return cached[1]
 
@@ -145,7 +150,7 @@ def fetch_grid(lead_minutes=0):
     # can't forcibly kill a thread; the orphaned download just gets
     # abandoned and eventually errors out or completes uselessly on its own).
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = pool.submit(_fetch_and_process, step)
+    future = pool.submit(_fetch_and_process, step, wide_bbox)
     try:
         grid = future.result(timeout=_FETCH_TIMEOUT_SECONDS)
     except concurrent.futures.TimeoutError:
@@ -153,7 +158,7 @@ def fetch_grid(lead_minutes=0):
         raise RuntimeError(f"ECMWF fetch exceeded {_FETCH_TIMEOUT_SECONDS}s, giving up") from None
     pool.shutdown(wait=False)
 
-    _CACHE[step] = (time.time(), grid)
+    _CACHE[cache_key] = (time.time(), grid)
     return grid
 
 

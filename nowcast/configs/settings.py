@@ -63,12 +63,28 @@ def get_region_name():
 REGION_BBOX = REGIONS[_active_region_key]["bbox"]
 REGION_NAME = REGIONS[_active_region_key]["name"]
 
-# Wider synthetic weather-variable grid (temperature/humidity/wind) — covers
-# Maharashtra-ish extent so the map shows colored data across the visible
-# area, not just the tiny storm bbox. Coarser resolution since it's a smooth
-# ambient field, not something pySTEPS/DGMR need to consume.
-WIDE_BBOX = (72.5, 15.5, 78.5, 21.5)
+# Wider weather-variable grid (temperature/humidity/wind/pressure) — covers
+# a larger area around the active region so the map shows colored data
+# across the visible area, not just the tiny storm bbox. Coarser resolution
+# since it's a smooth ambient field, not something pySTEPS/DGMR need to
+# consume. Derived from the active region's center (±3deg, matching the
+# original fixed Maharashtra-sized box's extent) rather than a fixed
+# constant — a fixed WIDE_BBOX meant switching to e.g. Delhi still showed
+# Maharashtra's weather grid, which is the kind of inconsistency a "switch
+# city" demo can't afford.
 WIDE_GRID_SIZE = 48
+_WIDE_HALF_DEG = 3.0
+
+
+def get_wide_bbox():
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
+    center_lon, center_lat = (lon_min + lon_max) / 2, (lat_min + lat_max) / 2
+    return (
+        center_lon - _WIDE_HALF_DEG,
+        center_lat - _WIDE_HALF_DEG,
+        center_lon + _WIDE_HALF_DEG,
+        center_lat + _WIDE_HALF_DEG,
+    )
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 IMD_DIR = os.path.join(DATA_DIR, "imd")

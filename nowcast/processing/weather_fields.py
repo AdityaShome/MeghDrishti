@@ -15,7 +15,8 @@ across the whole visible region, not just the narrow storm bbox used for
 radar/satellite/hazards.
 
 Two access patterns:
-- `generate_grid(t_min)`: full WIDE_BBOX raster, for the colored map overlay.
+- `generate_grid(t_min)`: full raster over settings.get_wide_bbox() (follows
+  the active region), for the colored map overlay.
 - `sample_point(lat, lon, t_min)`: single-point value, for the per-region
   "future trend" panel — cheap, no need to build the whole grid per click
   (in live mode, this samples the same cached grid `generate_grid` would
@@ -25,7 +26,7 @@ import sys
 
 import numpy as np
 
-from nowcast.configs.settings import WIDE_BBOX, WIDE_GRID_SIZE, USE_LIVE_ECMWF
+from nowcast.configs.settings import get_wide_bbox, WIDE_GRID_SIZE, USE_LIVE_ECMWF
 from nowcast.processing.storm_track import center_at
 
 # Baseline climatology for the demo region/season (rough Maharashtra
@@ -47,7 +48,7 @@ _STORM_PRESSURE_DIP_HPA = 12.0  # mesoscale convective low at the storm core
 
 
 def _grid_coords():
-    lon_min, lat_min, lon_max, lat_max = WIDE_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_wide_bbox()
     lons = np.linspace(lon_min, lon_max, WIDE_GRID_SIZE)
     lats = np.linspace(lat_min, lat_max, WIDE_GRID_SIZE)
     return np.meshgrid(lons, lats)
@@ -75,7 +76,7 @@ def _fields_at(lat, lon, t_min):
 
     temperature_c = (
         _TEMP_BASE_C
-        + _TEMP_LAT_GRADIENT * (lat - WIDE_BBOX[1])
+        + _TEMP_LAT_GRADIENT * (lat - get_wide_bbox()[1])
         + _TEMP_DIURNAL_AMPLITUDE_C * diurnal
         - _STORM_COOLING_C * proximity
     )
@@ -103,7 +104,7 @@ def _generate_grid_mock(t_min=0):
         "wind_speed_ms": np.clip(wind_speed_ms + noise(0.3), 0, None).astype(np.float32),
         "wind_dir_deg": (wind_dir_deg % 360).astype(np.float32),
         "pressure_hpa": (pressure_hpa + noise(0.5)).astype(np.float32),
-        "bbox": WIDE_BBOX,
+        "bbox": get_wide_bbox(),
         "grid_size": WIDE_GRID_SIZE,
         "source": "synthetic",
     }
@@ -189,7 +190,7 @@ def area_stats(bbox, t_min=0):
 def wind_vector_points(stride=4, t_min=0):
     """Sparse sample of wind vectors for arrow-symbol rendering (dense grids
     of arrows are unreadable — this thins WIDE_GRID_SIZE down by `stride`)."""
-    lon_min, lat_min, lon_max, lat_max = WIDE_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_wide_bbox()
     lons = np.linspace(lon_min, lon_max, WIDE_GRID_SIZE)[::stride]
     lats = np.linspace(lat_min, lat_max, WIDE_GRID_SIZE)[::stride]
     points = []

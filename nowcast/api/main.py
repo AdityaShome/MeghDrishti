@@ -53,6 +53,17 @@ _fusion_cache = {"frame": None, "computed_at": 0}
 _FORECAST_TTL_SECONDS = INGEST_CYCLE_MINUTES * 60
 _lock = threading.Lock()
 
+# key -> {"records", "loaded_from", "forecast", "fusion_frame", "warmed_at"} —
+# a full ingest+forecast+fusion snapshot per demo region, kept warm in the
+# background (_region_prewarm_loop) so switching regions via /regions/{key}
+# can apply an already-computed snapshot instantly instead of a live
+# 10-20s re-ingest (Tomorrow.io per station + RainViewer + Blitzortung's
+# fixed listen window + pySTEPS). A snapshot older than
+# _SNAPSHOT_FRESH_SECONDS is treated as not-yet-warmed and falls back to a
+# live ingest, same as before this existed.
+_region_snapshots = {}
+_SNAPSHOT_FRESH_SECONDS = INGEST_CYCLE_MINUTES * 60 * 2
+
 
 def _refresh_dgmr():
     """DGMR (section 4b) is loaded and run lazily, on first request only —
@@ -128,22 +139,87 @@ def _ingest_all():
             print(f"[api] {name} puller failed: {exc}")
 
 
-def _background_ingest_loop():
-    while True:
+def _warm_region(key):
+    """Run a full ingest+forecast+fusion cycle for `key` and stash the
+    result in _region_snapshots, without permanently disturbing whichever
+    region is currently active for live requests — restores the previous
+    active region before returning either way."""
+    prev_key = get_active_region_key()
+    try:
+        set_active_region(key)
         _ingest_all()
-        _refresh()
-        _fusion_cache["frame"] = build_fused_frame()
-        _fusion_cache["computed_at"] = time.time()
+        path = _latest_snapshot_path()
+        if path is None:
+            return
+        with open(path) as f:
+            data = json.load(f)
+        records = [classify_station(r) for r in data["records"]]
+        forecast = run_forecast()
+        fusion_frame = build_fused_frame()
+        with _lock:
+            _region_snapshots[key] = {
+                "records": records,
+                "loaded_from": path,
+                "forecast": forecast,
+                "fusion_frame": fusion_frame,
+                "warmed_at": time.time(),
+            }
+    except Exception as exc:
+        print(f"[api] pre-warm failed for region '{key}': {exc}")
+    finally:
+        # Only restore if nothing else changed the active region while this
+        # was running (e.g. a user switch landed mid-warm via /regions/{key})
+        # — don't stomp on a more recent switch made from another thread.
+        if get_active_region_key() == key:
+            set_active_region(prev_key)
+
+
+def _apply_snapshot(key):
+    """Instantly point the live caches (what every endpoint actually reads)
+    at a pre-warmed snapshot for `key`. Returns False if nothing warm
+    enough exists yet, so the caller can fall back to a live ingest."""
+    snap = _region_snapshots.get(key)
+    if snap is None or (time.time() - snap["warmed_at"]) > _SNAPSHOT_FRESH_SECONDS:
+        return False
+    with _lock:
+        _cache["records"] = snap["records"]
+        _cache["loaded_from"] = snap["loaded_from"]
+        _forecast_cache["data"] = snap["forecast"]
+        _forecast_cache["computed_at"] = snap["warmed_at"]
+        _fusion_cache["frame"] = snap["fusion_frame"]
+        _fusion_cache["computed_at"] = snap["warmed_at"]
+        # DGMR is a lazy, comparison-only feature (section 4b) — not part of
+        # the pre-warm set, just invalidated so it recomputes for the new
+        # region on next request instead of showing the old region's frame.
+        _dgmr_cache["data"] = None
+        _dgmr_cache["load_failed"] = False
+    return True
+
+
+def _region_prewarm_loop():
+    """Keeps every region's snapshot warm so /regions/{key} is instant
+    instead of a live re-ingest. One full pass over all REGIONS per
+    INGEST_CYCLE_MINUTES — same cadence the old single-region loop used —
+    then re-applies whichever region is currently active, so it keeps
+    refreshing periodically exactly like before this existed."""
+    while True:
+        for key in REGIONS:
+            _warm_region(key)
+        _apply_snapshot(get_active_region_key())
         time.sleep(INGEST_CYCLE_MINUTES * 60)
 
 
 @app.on_event("startup")
 def startup():
-    if _latest_snapshot_path() is None:
+    active = get_active_region_key()
+    _warm_region(active)
+    if not _apply_snapshot(active):
+        # _warm_region itself failed (e.g. every live source down) — fall
+        # back to the original startup path so the app still comes up.
         _ingest_all()
-    _refresh()
-    _refresh_fusion()
-    t = threading.Thread(target=_background_ingest_loop, daemon=True)
+        _refresh()
+        _refresh_fusion()
+    t = threading.Thread(target=_region_prewarm_loop, daemon=True)
     t.start()
 
 
@@ -166,20 +242,24 @@ def set_region(key: str):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    # Every cache is keyed by content, not region — invalidate all of them so
-    # the next request reflects the new region immediately instead of
-    # waiting for the next background ingest cycle (up to INGEST_CYCLE_MINUTES).
-    with _lock:
-        _forecast_cache["data"] = None
-        _dgmr_cache["data"] = None
-        _dgmr_cache["load_failed"] = False
-        _fusion_cache["frame"] = None
-        _cache["loaded_from"] = None
+    if not _apply_snapshot(key):
+        # Nothing pre-warmed yet for this region (e.g. requested before the
+        # background pre-warm loop's first full pass finishes) — fall back
+        # to a live ingest so the switch still works, just slower this once.
+        with _lock:
+            _forecast_cache["data"] = None
+            _dgmr_cache["data"] = None
+            _dgmr_cache["load_failed"] = False
+            _fusion_cache["frame"] = None
+            _cache["loaded_from"] = None
+        _ingest_all()
+        _refresh()
+        _refresh_fusion()
+        # Populate the snapshot cache too, so switching back to this region
+        # later is instant instead of live every time.
+        threading.Thread(target=_warm_region, args=(key,), daemon=True).start()
 
-    _ingest_all()
-    _refresh()
-    _refresh_fusion()
-    return {"active": key, "name": get_region_name()}
+    return {"active": key, "name": get_region_name(), "instant": key in _region_snapshots}
 
 
 @app.get("/hazards")
