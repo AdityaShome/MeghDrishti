@@ -110,10 +110,19 @@ Option A, was built instead).
 Backend:
 ```bash
 pip install -r requirements.txt
-uvicorn nowcast.api.main:app --reload --port 8000
+uvicorn nowcast.api.main:app --port 8000
 ```
 On startup it runs all three pullers once, fuses them, and serves immediately; it then
 re-ingests + recomputes every `INGEST_CYCLE_MINUTES` (15 by default).
+
+**Don't add `--reload` for normal use** — this app continuously writes its own timestamped
+data files into `nowcast/data/` (every ingest cycle, every region pre-warm), and uvicorn's
+reloader watches the whole project directory by default. With `--reload` on, every one of
+those writes looks like a source-code change and restarts the entire server mid-cycle,
+which surfaces as `cannot schedule new futures after interpreter shutdown` errors from
+whatever background fetch happened to be in flight — a genuine bug from `--reload`
+fighting the app, not an app bug itself. If you're actively editing backend Python and
+want `--reload`, exclude the data directory: `--reload --reload-exclude "nowcast/data/*"`.
 
 Dashboard:
 ```bash
