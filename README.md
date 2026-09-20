@@ -81,10 +81,9 @@ back to synthetic automatically if the live fetch fails.
   HTML/JS version is kept at `nowcast/dashboard/legacy/index.html` for reference but is
   no longer maintained. Verified with a headless-browser pass (Playwright) — see below.
 
-Not built/not verified live: Copernicus satellite integration is written but untested
-against real credentials (no CDSE account registered yet — see Next steps), real Doppler
-velocity for downburst (no public source exists outside MOSDAC/IMD), SmaAt-UNet
-fine-tuning (the plan's Option B for 4b — DGMR zero-shot, Option A, was built instead).
+Not built: real Doppler velocity for downburst (no public source exists outside
+MOSDAC/IMD), SmaAt-UNet fine-tuning (the plan's Option B for 4b — DGMR zero-shot,
+Option A, was built instead).
 
 ## Run it
 
@@ -130,13 +129,11 @@ errors. Two real bugs were caught this way and fixed:
 1. MOSDAC/IMD nowcast API registration is submitted and under review (project.md section
    1) — once granted, swap `radar_puller.py`'s velocity over to a real MOSDAC source;
    everything else already has a real stand-in (see above).
-2. Register a free Copernicus Data Space Ecosystem account and create OAuth2 client
-   credentials, then set `COPERNICUS_CLIENT_ID`/`COPERNICUS_CLIENT_SECRET` in `.env` to
-   turn on real satellite data — the integration (`copernicus_satellite.py`) is written
-   but has never been exercised against a live response, since no account exists yet.
-   EUMETSAT Meteosat-9 (Indian Ocean Data Coverage) remains a candidate alternative —
-   geostationary and continuously updating, unlike Sentinel-3's polar orbit — if the
-   Copernicus integration doesn't pan out.
+2. Copernicus satellite integration (`copernicus_satellite.py`) is registered and
+   verified live — real Sentinel-3 SLSTR brightness temperature confirmed across
+   multiple regions. EUMETSAT Meteosat-9 (Indian Ocean Data Coverage) remains a
+   candidate upgrade — geostationary and continuously updating, unlike Sentinel-3's
+   polar orbit (~1-2 passes/day) — if continuous coverage becomes a priority.
 3. Once real radar CAPPI grids or RainViewer's live feed have been observed against
    actual storms, downburst/hail thresholds should be re-validated — the current
    thresholds are textbook values, never checked against data.

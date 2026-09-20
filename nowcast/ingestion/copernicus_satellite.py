@@ -6,10 +6,10 @@ via Sentinel Hub's Process API (part of CDSE, https://dataspace.copernicus.eu).
 
 Needs a free CDSE account + OAuth2 client credentials (COPERNICUS_CLIENT_ID /
 COPERNICUS_CLIENT_SECRET in .env) — register at dataspace.copernicus.eu, then
-create an OAuth client under your account settings. Not testable without
-those credentials, so this module has been written carefully against the
-documented API shape but not exercised against a live response — if the
-request/response contract has drifted, it'll raise and the existing
+create an OAuth client under your account settings. Verified live: real
+brightness temperatures (246-323K, physically plausible) confirmed across
+Pune, Delhi, Chennai, and Guwahati. If the request/response contract drifts
+in the future (this is an evolving API), it'll raise and the existing
 fallback-to-synthetic path in satellite_insat.py takes over, same as every
 other live source in this project.
 

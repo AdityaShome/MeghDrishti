@@ -423,8 +423,10 @@ def nowcast_frame(
 def raw_layers():
     """Satellite IR + radar reflectivity as image overlays (section 5a).
 
-    Satellite stays synthetic (no MOSDAC/INSAT access yet). Radar is real
-    when `USE_LIVE_RADAR=true` — see radar_puller.py / rainviewer_radar.py —
+    Satellite is real (tir1 only) when `USE_LIVE_SATELLITE=true` — see
+    satellite_insat.py / copernicus_satellite.py — sourced from Copernicus
+    Sentinel-3 SLSTR, not MOSDAC/INSAT. Radar is real when
+    `USE_LIVE_RADAR=true` — see radar_puller.py / rainviewer_radar.py —
     sourced from RainViewer, not MOSDAC directly. Same bbox-anchored
     PNG-overlay contract either way, so the dashboard doesn't change when
     the source is swapped.
@@ -434,8 +436,10 @@ def raw_layers():
         return {"layers": [], "note": "no fused frame yet — ingestion still warming up"}
 
     from nowcast.ingestion.radar_puller import USE_LIVE_RADAR
+    from nowcast.ingestion.satellite_insat import USE_LIVE_SATELLITE
 
     radar_source = "rainviewer" if USE_LIVE_RADAR else "synthetic"
+    satellite_source = "copernicus-sentinel3" if USE_LIVE_SATELLITE else "synthetic"
     ch = frame["channels"]
     layers = [
         {
@@ -443,7 +447,7 @@ def raw_layers():
             "label": "Satellite IR (TIR-1, 10.8um)",
             "bbox": frame["bbox"],
             "image": _array_to_png_data_url(ch["tir1"], "gray_r", vmin=190, vmax=300),
-            "source": "synthetic",
+            "source": satellite_source,
         },
         {
             "id": "radar_reflectivity",
@@ -453,12 +457,10 @@ def raw_layers():
             "source": radar_source,
         },
     ]
-    note = (
-        "satellite synthetic; radar real via RainViewer (IMD-sourced, not direct MOSDAC)"
-        if USE_LIVE_RADAR
-        else "synthetic sensors — no MOSDAC/IMD radar or satellite access yet"
-    )
-    return {"layers": layers, "note": note}
+    notes = []
+    notes.append("satellite real via Copernicus Sentinel-3 SLSTR" if USE_LIVE_SATELLITE else "satellite synthetic")
+    notes.append("radar real via RainViewer (IMD-sourced, not direct MOSDAC)" if USE_LIVE_RADAR else "radar synthetic")
+    return {"layers": layers, "note": "; ".join(notes)}
 
 
 @app.get("/weather-layers")
