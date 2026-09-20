@@ -74,6 +74,24 @@ function Dashboard() {
     if (!hazards.error) setLastUpdated(new Date());
   }, [hazards.error, hazards.data]);
 
+  // Center the camera on whichever demo region is currently active
+  // (settings.py REGIONS / RegionPicker in LeftSidebar) instead of always
+  // defaulting to Pune — runs once the map's ready and doesn't fight the
+  // user's own panning/zooming afterward.
+  useEffect(() => {
+    if (!map) return;
+    api
+      .regions()
+      .then((r) => {
+        const active = r.options.find((o) => o.key === r.active);
+        if (!active) return;
+        const [lonMin, latMin, lonMax, latMax] = active.bbox;
+        map.jumpTo({ center: [(lonMin + lonMax) / 2, (latMin + latMax) / 2], zoom: 10.2 });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
   // reset to a clean lead-time position whenever the model changes, since
   // DGMR's horizon (90min) is shorter than pySTEPS' (6h)
   useEffect(() => {

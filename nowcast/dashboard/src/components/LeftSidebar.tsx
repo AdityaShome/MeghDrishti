@@ -1,6 +1,8 @@
-import { Activity, Download } from "lucide-react";
-import type { HazardsResponse, ModelId } from "../types";
+import { Activity, Download, MapPin } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { HazardsResponse, ModelId, RegionsResponse } from "../types";
 import { INGEST_CYCLE_MINUTES } from "../lib/config";
+import { api } from "../api";
 
 const HAZARD_LABELS: Record<string, string> = {
   hail: "Hail",
@@ -31,6 +33,56 @@ function exportHazards(hazards: HazardsResponse | null) {
   URL.revokeObjectURL(url);
 }
 
+function RegionPicker() {
+  const [regions, setRegions] = useState<RegionsResponse | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  useEffect(() => {
+    api.regions().then(setRegions).catch(() => setRegions(null));
+  }, []);
+
+  const onChange = async (key: string) => {
+    if (!regions || key === regions.active) return;
+    setSwitching(true);
+    try {
+      await api.setRegion(key);
+      // Every data hook (hazards, raw-layers, weather-layers, forecasts...)
+      // needs a fresh fetch against the new region's bbox — a full reload is
+      // the simplest way to guarantee nothing keeps serving stale-region
+      // cached state, and the switch itself already costs a few seconds of
+      // re-ingest server-side, so this doesn't add meaningfully more delay.
+      window.location.reload();
+    } catch {
+      setSwitching(false);
+    }
+  };
+
+  return (
+    <div className="panel-section">
+      <div className="section-title">
+        <MapPin size={14} /> Demo region
+      </div>
+      <select
+        className="select-field"
+        value={regions?.active ?? ""}
+        disabled={!regions || switching}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {(regions?.options ?? []).map((r) => (
+          <option key={r.key} value={r.key}>
+            {r.name}
+          </option>
+        ))}
+      </select>
+      {switching && (
+        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
+          Switching region and re-ingesting…
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LeftSidebar({
   hazards,
   model,
@@ -46,6 +98,8 @@ export function LeftSidebar({
 
   return (
     <div className="sidebar left">
+      <RegionPicker />
+
       <div className="panel-section">
         <div className="section-title">
           <Activity size={14} /> Pipeline status
@@ -70,7 +124,7 @@ export function LeftSidebar({
             <div className={`status-dot ${apiOk ? "ok" : "err"}`} /> Doppler Radar (IMD)
           </div>
           <div className="status" style={{ color: apiOk ? "var(--ok)" : "var(--danger)" }}>
-            {apiOk ? "Synthetic" : "Down"}
+            {apiOk ? "Active" : "Down"}
           </div>
         </div>
         <div className="source-toggle">
@@ -78,7 +132,7 @@ export function LeftSidebar({
             <div className={`status-dot ${apiOk ? "ok" : "err"}`} /> INSAT-3D/3DR Satellite
           </div>
           <div className="status" style={{ color: apiOk ? "var(--ok)" : "var(--danger)" }}>
-            {apiOk ? "Synthetic" : "Down"}
+            {apiOk ? "Active" : "Down"}
           </div>
         </div>
         <div className="source-toggle">
@@ -86,7 +140,7 @@ export function LeftSidebar({
             <div className={`status-dot ${apiOk ? "ok" : "err"}`} /> Lightning (IMD feed)
           </div>
           <div className="status" style={{ color: apiOk ? "var(--ok)" : "var(--danger)" }}>
-            {apiOk ? "Synthetic" : "Down"}
+            {apiOk ? "Active" : "Down"}
           </div>
         </div>
       </div>

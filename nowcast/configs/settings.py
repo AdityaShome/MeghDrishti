@@ -8,11 +8,60 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# lon_min, lat_min, lon_max, lat_max — fine storm-scale grid (radar/satellite/
-# pySTEPS/DGMR/hazards). Kept small on purpose: these all run per-request or
-# per-ingest-cycle and the demo storm needs to stay inside it.
-REGION_BBOX = (73.6, 18.3, 74.1, 18.8)
-REGION_NAME = "Pune"
+# Selectable demo regions — the storm-scale grid (radar/satellite/pySTEPS/
+# DGMR/hazards) is deliberately a small, fixed-size box (~0.5deg, matches
+# GRID_SIZE=64 in synthetic_radar.py for ~800m/cell resolution): widening
+# this box itself to cover all of India would collapse the demo storm to
+# a sub-pixel blob and blow up hazard-rule filter windows tuned for this
+# scale. Instead, the SAME size box can be repositioned to any major city,
+# so real layers (RainViewer/Blitzortung/ECMWF, which already cover all of
+# India) and the synthetic storm-scale grid both center on wherever the
+# user picks.
+REGIONS = {
+    "pune": {"name": "Pune", "bbox": (73.6, 18.3, 74.1, 18.8)},
+    "delhi": {"name": "Delhi NCR", "bbox": (76.85, 28.35, 77.35, 28.85)},
+    "mumbai": {"name": "Mumbai", "bbox": (72.6, 18.85, 73.1, 19.35)},
+    "chennai": {"name": "Chennai", "bbox": (80.0, 12.85, 80.5, 13.35)},
+    "kolkata": {"name": "Kolkata", "bbox": (88.15, 22.35, 88.65, 22.85)},
+    "bengaluru": {"name": "Bengaluru", "bbox": (77.35, 12.75, 77.85, 13.25)},
+    "hyderabad": {"name": "Hyderabad", "bbox": (78.25, 17.15, 78.75, 17.65)},
+    "ahmedabad": {"name": "Ahmedabad", "bbox": (72.35, 22.80, 72.85, 23.30)},
+    "jaipur": {"name": "Jaipur", "bbox": (75.55, 26.65, 76.05, 27.15)},
+    "guwahati": {"name": "Guwahati", "bbox": (91.5, 26.0, 92.0, 26.5)},
+}
+
+_active_region_key = "pune"
+
+
+def get_active_region_key():
+    return _active_region_key
+
+
+def set_active_region(key):
+    """Switch the active demo region. Takes effect on the next ingest cycle —
+    every consumer calls get_region_bbox()/get_region_name() fresh rather than
+    importing a frozen constant, see settings.py's own module docstring note."""
+    global _active_region_key
+    if key not in REGIONS:
+        raise ValueError(f"unknown region '{key}', choose from {list(REGIONS)}")
+    _active_region_key = key
+
+
+def get_region_bbox():
+    return REGIONS[_active_region_key]["bbox"]
+
+
+def get_region_name():
+    return REGIONS[_active_region_key]["name"]
+
+
+# Legacy static constants — frozen at import time, do NOT reflect region
+# switches made after import. Kept only so nothing crashes if something still
+# imports these directly; every ingestion/processing/model module in this
+# project has been converted to call get_region_bbox()/get_region_name()
+# instead. New code should always use the getters.
+REGION_BBOX = REGIONS[_active_region_key]["bbox"]
+REGION_NAME = REGIONS[_active_region_key]["name"]
 
 # Wider synthetic weather-variable grid (temperature/humidity/wind) — covers
 # Maharashtra-ish extent so the map shows colored data across the visible

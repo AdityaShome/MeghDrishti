@@ -10,6 +10,7 @@ import type {
   ModelId,
   HistoryTimestampsResponse,
   HistoryHazardsResponse,
+  RegionsResponse,
 } from "./types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
@@ -31,6 +32,12 @@ async function getJSON<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function postJSON<T>(path: string): Promise<T> {
+  const res = await fetch(API_BASE + path, { method: "POST" });
+  if (!res.ok) throw new ApiError(path, res.status);
+  return (await res.json()) as T;
+}
+
 export const api = {
   health: () => getJSON<{ status: string; loaded_from: string | null }>("/health"),
   hazards: (leadMinutes: number) => getJSON<HazardsResponse>(`/hazards?lead_time=${leadMinutes}`),
@@ -45,6 +52,8 @@ export const api = {
     getJSON<NowcastFrame>(`/nowcast-frame?model=${model}&lead_time=${leadMinutes}`),
   historyTimestamps: () => getJSON<HistoryTimestampsResponse>("/history/timestamps"),
   historyHazards: (timestamp: string) => getJSON<HistoryHazardsResponse>(`/history/hazards?timestamp=${timestamp}`),
+  regions: () => getJSON<RegionsResponse>("/regions"),
+  setRegion: (key: string) => postJSON<{ active: string; name: string }>(`/regions/${key}`),
 };
 
 export { ApiError };

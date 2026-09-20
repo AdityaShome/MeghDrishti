@@ -137,3 +137,8 @@ export interface HistoryHazardsResponse {
   timestamp: string;
   note: string;
 }
+
+export interface RegionsResponse {
+  active: string;
+  options: { key: string; name: string; bbox: Bbox }[];
+}

@@ -21,7 +21,7 @@ from datetime import datetime
 
 import numpy as np
 
-from nowcast.configs.settings import DATA_DIR, REGION_BBOX
+from nowcast.configs.settings import DATA_DIR, get_region_bbox
 from nowcast.processing.synthetic_radar import GRID_SIZE
 
 FUSION_DIR = os.path.join(DATA_DIR, "fusion")
@@ -30,7 +30,7 @@ BUFFER_MAX_FRAMES = 12  # ~2h at a 10min cadence
 
 
 def _grid_coords():
-    lon_min, lat_min, lon_max, lat_max = REGION_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
     lons = np.linspace(lon_min, lon_max, GRID_SIZE)
     lats = np.linspace(lat_min, lat_max, GRID_SIZE)
     return np.meshgrid(lons, lats)
@@ -137,7 +137,7 @@ def build_fused_frame():
     }
     return {
         "channels": channels,
-        "bbox": REGION_BBOX,
+        "bbox": get_region_bbox(),
         "grid_size": GRID_SIZE,
         "sources": {"satellite": sat_path, "radar": radar_path, "lightning": lightning_path},
     }
@@ -210,7 +210,7 @@ def build_fused_frame_for_timestamp(timestamp_str):
     }
     return {
         "channels": channels,
-        "bbox": REGION_BBOX,
+        "bbox": get_region_bbox(),
         "grid_size": GRID_SIZE,
         "sources": {"satellite": sat_path, "radar": radar_path, "lightning": imd_path},
         "timestamp": timestamp_str,

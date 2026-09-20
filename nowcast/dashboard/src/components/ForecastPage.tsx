@@ -15,7 +15,7 @@ const MODEL_META: Record<ModelId, { label: string; desc: string; unit: string; m
   },
   dgmr: {
     label: "DGMR",
-    desc: "DeepMind's pretrained Skillful Nowcasting GAN, run zero-shot on synthetic input. Relative intensity (0-1), not calibrated mm/hr. 0-90min horizon.",
+    desc: "DeepMind's pretrained Skillful Nowcasting GAN, run zero-shot. Relative intensity (0-1), not calibrated mm/hr. 0-90min horizon.",
     unit: "",
     max: 90,
     step: 5,

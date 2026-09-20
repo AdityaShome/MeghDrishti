@@ -12,7 +12,7 @@ from pysteps import motion, nowcasts
 from pysteps.utils import transformation
 
 from nowcast.processing.synthetic_radar import generate_sequence, GRID_SIZE
-from nowcast.configs.settings import REGION_BBOX
+from nowcast.configs.settings import get_region_bbox
 
 
 def _dbz_to_rainrate(dbz):
@@ -55,7 +55,7 @@ def run_forecast(n_lead_steps=36, dt_minutes=10, history_frames=6):
         "dbz_forecast": [f.astype(np.float32) for f in forecast_dbz],
         "rainrate_forecast": [f.astype(np.float32) for f in forecast_rainrate],
         "motion_field": motion_field,
-        "bbox": REGION_BBOX,
+        "bbox": get_region_bbox(),
         "grid_size": GRID_SIZE,
     }
 

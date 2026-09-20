@@ -25,7 +25,7 @@ import numpy as np
 import torch
 
 from nowcast.processing.synthetic_radar import generate_sequence, GRID_SIZE
-from nowcast.configs.settings import REGION_BBOX
+from nowcast.configs.settings import get_region_bbox
 from nowcast.models.pysteps_baseline import _dbz_to_rainrate
 
 # Deliberately NOT run through the Marshall-Palmer Z-R relation like pySTEPS'
@@ -106,7 +106,7 @@ def run_forecast(history_frames=CONTEXT_FRAMES, dt_minutes=10):
     return {
         "timestamps_min": timestamps_min,
         "intensity_forecast": [f.astype(np.float32) for f in intensity_forecast],
-        "bbox": REGION_BBOX,
+        "bbox": get_region_bbox(),
         "grid_size": GRID_SIZE,
         "source": "dgmr",
         "note": "relative intensity 0-1, not calibrated mm/hr — see module docstring",

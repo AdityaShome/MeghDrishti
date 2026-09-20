@@ -25,7 +25,7 @@ from PIL import Image
 from io import BytesIO
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from nowcast.configs.settings import REGION_BBOX
+from nowcast.configs.settings import get_region_bbox
 
 TILE_SIZE = 256
 ZOOM = 10  # ~0.35 deg/tile at the equator, well under REGION_BBOX's ~0.5 deg extent
@@ -72,10 +72,10 @@ def _latest_frame_path():
 
 
 def fetch_reflectivity(grid_size=64):
-    """Real reflectivity grid over REGION_BBOX, regridded to (grid_size, grid_size)."""
+    """Real reflectivity grid over the active region's bbox, regridded to (grid_size, grid_size)."""
     host, frame_path = _latest_frame_path()
 
-    lon_min, lat_min, lon_max, lat_max = REGION_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
     x_min, y_max = _latlon_to_tile(lat_min, lon_min, ZOOM)  # smaller lat -> larger y
     x_max, y_min = _latlon_to_tile(lat_max, lon_max, ZOOM)
     tx_range = range(int(np.floor(x_min)), int(np.floor(x_max)) + 1)

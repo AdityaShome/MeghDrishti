@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from nowcast.configs.settings import REGION_BBOX, DATA_DIR
+from nowcast.configs.settings import get_region_bbox, DATA_DIR
 from nowcast.processing.storm_track import center_at
 from nowcast.processing.synthetic_radar import GRID_SIZE
 
@@ -37,7 +37,7 @@ _MWIR_AMBIENT_K = 285.0
 
 
 def _grid_coords():
-    lon_min, lat_min, lon_max, lat_max = REGION_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
     lons = np.linspace(lon_min, lon_max, GRID_SIZE)
     lats = np.linspace(lat_min, lat_max, GRID_SIZE)
     return np.meshgrid(lons, lats)
@@ -49,8 +49,9 @@ def _fetch_live():
 
 def _fetch_mock(t_min=0):
     lon_grid, lat_grid = _grid_coords()
+    _, bbox_lat_min, _, bbox_lat_max = get_region_bbox()
     km_per_deg_lat = 111.0
-    km_per_deg_lon = 111.0 * np.cos(np.radians((REGION_BBOX[1] + REGION_BBOX[3]) / 2))
+    km_per_deg_lon = 111.0 * np.cos(np.radians((bbox_lat_min + bbox_lat_max) / 2))
 
     c_lat, c_lon = center_at(t_min)
     dy_km = (lat_grid - c_lat) * km_per_deg_lat
@@ -83,7 +84,7 @@ def pull():
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = os.path.join(SATELLITE_DIR, f"{ts}.npz")
-    np.savez(out_path, tir1=tir1, wv=wv, mwir=mwir, bbox=np.array(REGION_BBOX))
+    np.savez(out_path, tir1=tir1, wv=wv, mwir=mwir, bbox=np.array(get_region_bbox()))
     print(f"[satellite_insat] wrote TIR1/WV/MWIR grid -> {out_path}")
     return out_path
 

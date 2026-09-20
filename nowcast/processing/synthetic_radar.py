@@ -13,14 +13,14 @@ radar, satellite, and lightning mock generators.
 """
 import numpy as np
 
-from nowcast.configs.settings import REGION_BBOX
+from nowcast.configs.settings import get_region_bbox
 from nowcast.processing.storm_track import center_at, DEFAULT_CELL
 
 GRID_SIZE = 64  # cells per side, ~ few hundred m to 1km depending on bbox extent
 
 
 def _grid_coords():
-    lon_min, lat_min, lon_max, lat_max = REGION_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
     lons = np.linspace(lon_min, lon_max, GRID_SIZE)
     lats = np.linspace(lat_min, lat_max, GRID_SIZE)
     return np.meshgrid(lons, lats)
@@ -45,7 +45,8 @@ def generate_sequence(n_frames=6, dt_minutes=10, peak_dbz=58, radius_km=8, t_off
 
     lon_grid, lat_grid = _grid_coords()
     km_per_deg_lat = 111.0
-    km_per_deg_lon = 111.0 * np.cos(np.radians((REGION_BBOX[1] + REGION_BBOX[3]) / 2))
+    _, bbox_lat_min, _, bbox_lat_max = get_region_bbox()
+    km_per_deg_lon = 111.0 * np.cos(np.radians((bbox_lat_min + bbox_lat_max) / 2))
 
     frames = []
     for i in range(n_frames):
@@ -73,7 +74,8 @@ def generate_velocity_frame(t_min=0, radius_km=8, max_velocity_ms=28, **track_kw
     """
     lon_grid, lat_grid = _grid_coords()
     km_per_deg_lat = 111.0
-    km_per_deg_lon = 111.0 * np.cos(np.radians((REGION_BBOX[1] + REGION_BBOX[3]) / 2))
+    _, bbox_lat_min, _, bbox_lat_max = get_region_bbox()
+    km_per_deg_lon = 111.0 * np.cos(np.radians((bbox_lat_min + bbox_lat_max) / 2))
 
     bearing_deg = track_kwargs.get("bearing_deg", DEFAULT_CELL["bearing_deg"])
     c_lat, c_lon = center_at(t_min, **track_kwargs)

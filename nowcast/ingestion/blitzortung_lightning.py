@@ -26,7 +26,7 @@ import time
 import paho.mqtt.client as mqtt
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from nowcast.configs.settings import REGION_BBOX
+from nowcast.configs.settings import get_region_bbox
 
 BROKER_HOST = "blitzortung.ha.sed.pl"
 BROKER_PORT = 1883
@@ -41,7 +41,7 @@ def fetch_strikes():
     Returns list of {lat, lon, time_unix} dicts (may be empty). Strike
     `time` from Blitzortung is nanoseconds since epoch; converted to seconds.
     """
-    lon_min, lat_min, lon_max, lat_max = REGION_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
     lon_min, lat_min = lon_min - BBOX_PAD_DEG, lat_min - BBOX_PAD_DEG
     lon_max, lat_max = lon_max + BBOX_PAD_DEG, lat_max + BBOX_PAD_DEG
 

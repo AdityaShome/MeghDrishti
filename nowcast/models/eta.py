@@ -9,7 +9,7 @@ never hard-fails the demo.
 import math
 import random
 
-from nowcast.configs.settings import REGION_BBOX
+from nowcast.configs.settings import get_region_bbox
 
 _PLACEHOLDER_BEARING_DEG = 60
 _PLACEHOLDER_SPEED_KMH = 30
@@ -31,7 +31,7 @@ def _motion_from_pysteps():
 
     fc = run_forecast()
     u, v = fc["motion_field"]  # grid-cells per dt_minutes, x/east and y/north components
-    lon_min, lat_min, lon_max, lat_max = REGION_BBOX
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
     n = fc["grid_size"]
     km_per_cell_x = (lon_max - lon_min) / n * 111.0 * math.cos(math.radians((lat_min + lat_max) / 2))
     km_per_cell_y = (lat_max - lat_min) / n * 111.0

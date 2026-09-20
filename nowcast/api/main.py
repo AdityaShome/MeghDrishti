@@ -20,7 +20,15 @@ import requests
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from nowcast.configs.settings import IMD_DIR, INGEST_CYCLE_MINUTES, CLOUDBURST_RAIN_RATE_MM_HR
+from nowcast.configs.settings import (
+    IMD_DIR,
+    INGEST_CYCLE_MINUTES,
+    CLOUDBURST_RAIN_RATE_MM_HR,
+    REGIONS,
+    get_active_region_key,
+    get_region_name,
+    set_active_region,
+)
 from nowcast.ingestion.imd_nowcast import pull as pull_imd
 from nowcast.ingestion.satellite_insat import pull as pull_satellite
 from nowcast.ingestion.radar_puller import pull as pull_radar
@@ -137,6 +145,41 @@ def startup():
     _refresh_fusion()
     t = threading.Thread(target=_background_ingest_loop, daemon=True)
     t.start()
+
+
+@app.get("/regions")
+def regions():
+    """Selectable demo regions (section: see settings.py REGIONS docstring) —
+    the storm-scale grid is a fixed-size box that can be repositioned to any
+    of these; real layers (RainViewer/Blitzortung/ECMWF) already cover
+    wherever it's pointed."""
+    return {
+        "active": get_active_region_key(),
+        "options": [{"key": k, "name": v["name"], "bbox": v["bbox"]} for k, v in REGIONS.items()],
+    }
+
+
+@app.post("/regions/{key}")
+def set_region(key: str):
+    try:
+        set_active_region(key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # Every cache is keyed by content, not region — invalidate all of them so
+    # the next request reflects the new region immediately instead of
+    # waiting for the next background ingest cycle (up to INGEST_CYCLE_MINUTES).
+    with _lock:
+        _forecast_cache["data"] = None
+        _dgmr_cache["data"] = None
+        _dgmr_cache["load_failed"] = False
+        _fusion_cache["frame"] = None
+        _cache["loaded_from"] = None
+
+    _ingest_all()
+    _refresh()
+    _refresh_fusion()
+    return {"active": key, "name": get_region_name()}
 
 
 @app.get("/hazards")

@@ -65,7 +65,7 @@ export function LayersDrawer({
         <div style={{ fontSize: 10.5, color: "var(--text-dim)", marginTop: 9, lineHeight: 1.5 }}>
           {model === "pysteps"
             ? "Optical-flow extrapolation baseline. Calibrated mm/hr, 0-6h horizon."
-            : "DeepMind's pretrained Skillful Nowcasting GAN, run zero-shot on synthetic input. Relative intensity, not calibrated mm/hr. 0-90min horizon."}
+            : "DeepMind's pretrained Skillful Nowcasting GAN, run zero-shot. Relative intensity, not calibrated mm/hr. 0-90min horizon."}
         </div>
         <label className="check-row" style={{ marginTop: 8 }}>
           <input type="checkbox" checked={modelFrameVisible} onChange={(e) => onModelFrameVisibleChange(e.target.checked)} />
@@ -98,19 +98,12 @@ export function LayersDrawer({
             </div>
           </>
         )}
-        <div className="note-text">
-          {weatherSource === "ecmwf-opendata" ? (
-            <>
-              <span className="real-badge">REAL</span>
-              ECMWF Open Data (HRES forecast, CC-BY-4.0) — no API key needed.
-            </>
-          ) : (
-            <>
-              <span className="synthetic-badge">SYNTHETIC</span>
-              Ambient field, not an IMD/MOSDAC/ECMWF product — smooth climatology + storm perturbation.
-            </>
-          )}
-        </div>
+        {weatherSource === "ecmwf-opendata" && (
+          <div className="note-text">
+            <span className="real-badge">REAL</span>
+            ECMWF Open Data (HRES forecast, CC-BY-4.0) — no API key needed.
+          </div>
+        )}
       </div>
 
       <div className="panel-section">

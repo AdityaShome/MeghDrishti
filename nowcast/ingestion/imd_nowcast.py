@@ -50,7 +50,9 @@ sys.path.insert(
 )
 
 from nowcast.configs.settings import (
-    REGION_BBOX,
+    get_region_bbox,
+    get_region_name,
+    get_active_region_key,
     IMD_DIR,
     USE_LIVE_IMD,
     TOMORROW_API_KEY,
@@ -61,47 +63,43 @@ from nowcast.processing.storm_track import center_at
 
 
 # ---------------------------------------------------------------------------
-# Demo stations
+# Demo stations — six AWS-style points spread around whichever region is
+# active (settings.set_active_region), same relative layout (km offsets from
+# region center) the original hardcoded Pune stations used. Regenerated on
+# every call rather than a static list so switching regions doesn't leave
+# stale station names/coordinates from the previous city.
 # ---------------------------------------------------------------------------
 
-STATIONS = [
-    {
-        "station_id": "PUN001",
-        "name": "Pune City",
-        "lat": 18.52,
-        "lon": 73.86,
-    },
-    {
-        "station_id": "PUN002",
-        "name": "Pimpri-Chinchwad",
-        "lat": 18.63,
-        "lon": 73.80,
-    },
-    {
-        "station_id": "PUN003",
-        "name": "Lonavala",
-        "lat": 18.75,
-        "lon": 73.41,
-    },
-    {
-        "station_id": "PUN004",
-        "name": "Baramati",
-        "lat": 18.15,
-        "lon": 74.58,
-    },
-    {
-        "station_id": "PUN005",
-        "name": "Khadakwasla",
-        "lat": 18.44,
-        "lon": 73.77,
-    },
-    {
-        "station_id": "PUN006",
-        "name": "Storm-adjacent AWS",
-        "lat": 18.32,
-        "lon": 73.68,
-    },
+_STATION_OFFSETS = [
+    ("001", "City", 2.2, 2.7),
+    ("002", "North Metro", 14.5, -3.2),
+    ("003", "Hills AWS", 28.0, -24.5),
+    ("004", "East Outskirts", -16.5, 51.0),
+    ("005", "Reservoir AWS", -9.0, -7.0),
+    ("006", "Storm-adjacent AWS", -20.0, -18.0),
 ]
+
+
+def get_stations():
+    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
+    center_lat, center_lon = (lat_min + lat_max) / 2, (lon_min + lon_max) / 2
+    region_key = get_active_region_key()
+    region_name = get_region_name()
+
+    km_per_deg_lat = 111.0
+    km_per_deg_lon = 111.0 * math.cos(math.radians(center_lat))
+
+    stations = []
+    for suffix, label, dlat_km, dlon_km in _STATION_OFFSETS:
+        stations.append(
+            {
+                "station_id": f"{region_key.upper()[:3]}{suffix}",
+                "name": f"{region_name} {label}",
+                "lat": round(center_lat + dlat_km / km_per_deg_lat, 4),
+                "lon": round(center_lon + dlon_km / km_per_deg_lon, 4),
+            }
+        )
+    return stations
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +160,7 @@ def _fetch_live():
 
     records = []
 
-    for station in STATIONS:
+    for station in get_stations():
         params = {
             "location": f"{station['lat']},{station['lon']}",
             "apikey": TOMORROW_API_KEY,
@@ -361,7 +359,7 @@ def _fetch_mock():
 
     records = []
 
-    for station in STATIONS:
+    for station in get_stations():
         dist_km = _km_from_storm_core(
             station["lat"],
             station["lon"],
@@ -511,7 +509,7 @@ def pull():
 
         json.dump(
             {
-                "bbox": REGION_BBOX,
+                "bbox": get_region_bbox(),
                 "records": records,
             },
             output_file,
