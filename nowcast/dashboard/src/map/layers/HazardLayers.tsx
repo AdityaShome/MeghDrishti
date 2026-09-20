@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { Marker, Popup, type GeoJSONSource } from "maplibre-gl";
 import type { Point } from "geojson";
 import { useMeghMap } from "../MapProvider";
-import { colorForHazards, HAZARD_COLOR } from "../../lib/colors";
-import type { HazardsResponse, HazardFeature, Hazard, HazardType } from "../../types";
+import { colorForHazards, SEVERITY_COLOR } from "../../lib/colors";
+import type { HazardsResponse, HazardFeature, Hazard } from "../../types";
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] as HazardFeature[] };
 
@@ -23,9 +23,13 @@ function hazardDetail(h: Hazard): string {
  * (100+ overlapping grid cells forming one storm shape), but real hail/
  * lightning right now is usually a handful of scattered points, which a
  * heatmap renders as faint, washed-out blobs instead of something that
- * actually draws the eye. */
-function buildMarkerElement(type: HazardType, severity: string): HTMLDivElement {
-  const color = HAZARD_COLOR[type];
+ * actually draws the eye.
+ *
+ * Colored by severity (green/yellow/red), not hazard type — matches
+ * hazard_india.py's reflectivity-based low/moderate/high tiers (lightning
+ * is always "high": a real strike is an immediate hazard, not graded). */
+function buildMarkerElement(severity: string): HTMLDivElement {
+  const color = SEVERITY_COLOR[severity] ?? SEVERITY_COLOR.moderate;
   const el = document.createElement("div");
   el.className = `hazard-marker hazard-marker-${severity}`;
   el.style.setProperty("--hazard-color", color);
@@ -119,7 +123,7 @@ export function HazardLayers({
 
       const [lon, lat] = f.geometry.coordinates;
       for (const h of f.properties.hazards) {
-        const el = buildMarkerElement(h.type, h.severity);
+        const el = buildMarkerElement(h.severity);
         el.style.display = visibleRef.current ? "" : "none";
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();

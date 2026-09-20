@@ -20,6 +20,16 @@ export function colorForHazards(hazards: Hazard[]): string {
   return HAZARD_COLOR.lightning;
 }
 
+// Real hazard markers (HazardLayers.tsx) are colored by severity, not by
+// hazard type — green/yellow/red matches how a severity scale reads at a
+// glance, and /hazards' "low"/"moderate"/"high" (hazard_india.py's
+// reflectivity-based tiers, or lightning's fixed "high") maps onto it directly.
+export const SEVERITY_COLOR: Record<string, string> = {
+  low: "#22c55e",
+  moderate: "#f0b429",
+  high: "#ef4444",
+};
+
 export const VAR_COLOR_STOPS: Record<string, [string, string, string]> = {
   temperature: ["#3fb6ff", "#f0b429", "#f5486b"],
   humidity: ["#f5f0c8", "#4fb5d6", "#1c4e8a"],

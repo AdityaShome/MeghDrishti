@@ -392,17 +392,21 @@ function Dashboard() {
               </div>
 
               <div className="panel-section" style={{ background: "var(--panel)", borderRadius: "12px", border: "1px solid var(--panel-border)" }}>
-                <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "8px", fontWeight: 600 }}>Hazard Zones</div>
+                <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "8px", fontWeight: 600 }}>Hazard Severity</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
-                    <div style={{ width: 10, height: 10, background: "var(--hail)", border: "1px solid #fff", borderRadius: "2px" }} /> Hail
+                    <div style={{ width: 10, height: 10, background: "#ef4444", border: "1px solid #fff", borderRadius: "50%" }} /> High
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
-                    <div style={{ width: 10, height: 10, background: "var(--lightning)", border: "1px solid #fff", borderRadius: "2px" }} /> Lightning
+                    <div style={{ width: 10, height: 10, background: "#f0b429", border: "1px solid #fff", borderRadius: "50%" }} /> Moderate
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
+                    <div style={{ width: 10, height: 10, background: "#22c55e", border: "1px solid #fff", borderRadius: "50%" }} /> Low
                   </div>
                 </div>
                 <div style={{ fontSize: 9.5, color: "var(--text-faint)", marginTop: 8, lineHeight: 1.4 }}>
-                  Real, all of India, right now — RainViewer reflectivity + Blitzortung lightning.
+                  Real hail (RainViewer) + lightning (Blitzortung), all of India. Drag the lead-time slider to see
+                  points advected by real wind (not a re-detected forecast).
                 </div>
               </div>
             </div>

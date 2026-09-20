@@ -2,7 +2,7 @@
 // Keep in sync manually — no shared schema generation in this project yet.
 
 export type HazardType = "hail" | "downburst" | "cloudburst" | "lightning";
-export type Severity = "moderate" | "high";
+export type Severity = "low" | "moderate" | "high";
 
 export interface Hazard {
   type: HazardType;

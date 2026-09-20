@@ -20,6 +20,21 @@ license) isn't available everywhere in India at once, so requiring it would
 make hail flicker on/off based on incidental satellite coverage rather than
 actual storm severity — reflectivity + lightning is still a real,
 non-synthetic signal on its own.
+
+Severity is 3-tier (low/moderate/high, colored green/yellow/red on the map)
+based on reflectivity for hail, bumped up a tier if a real strike is
+collocated; lightning strikes are always "high" (an actual strike is
+inherently a live hazard, not a graded risk).
+
+`lead_minutes` (used by /hazards' lead-time slider) does NOT re-run
+detection at a future time — there's no real all-India forecast mechanism
+for hail/lightning (same reason cloudburst/downburst were dropped
+entirely). Instead each point's position is advected by the real ECMWF
+wind vector at that location, a standard simplified nowcasting technique
+(storms roughly follow the steering flow) — NOT a re-detected forecast,
+just today's real detections moved along today's real wind. Documented
+explicitly rather than left implicit, since it's a real/synthetic
+distinction worth being honest about.
 """
 import os
 import sys
@@ -30,11 +45,54 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from nowcast.configs.settings import INDIA_BBOX, HAIL_REFLECTIVITY_MIN_DBZ
 
 INDIA_GRID_SIZE = 150  # ~0.2deg/cell, ~22km — fine enough for a country overview
-LIGHTNING_PROXIMITY_KM = 25.0  # collocated-with-lightning bumps hail severity to "high"
+LIGHTNING_PROXIMITY_KM = 25.0  # collocated-with-lightning bumps hail severity up a tier
+HAIL_MODERATE_DBZ = 65.0  # >= this (and below HIGH) -> "moderate"
+HAIL_HIGH_DBZ = 78.0  # >= this -> "high"
+
+_SEVERITY_ORDER = ["low", "moderate", "high"]
+
+
+def _bump_severity(severity):
+    idx = min(_SEVERITY_ORDER.index(severity) + 1, len(_SEVERITY_ORDER) - 1)
+    return _SEVERITY_ORDER[idx]
 
 
 def _km_per_deg(lat):
     return 111.0, 111.0 * np.cos(np.radians(lat))
+
+
+def advect_point(lat, lon, lead_minutes):
+    """Shift (lat, lon) by the real ECMWF wind vector at that point over
+    `lead_minutes` — see module docstring for what this is and isn't."""
+    if lead_minutes <= 0:
+        return lat, lon
+    from nowcast.processing import weather_fields
+
+    sample = weather_fields.sample_point(lat, lon, lead_minutes)
+    speed_ms = sample["wind_speed_ms"]
+    if speed_ms <= 0:
+        return lat, lon
+    # wind_dir_deg is the direction wind blows FROM (met convention) —
+    # movement is the opposite direction.
+    to_rad = np.radians((sample["wind_dir_deg"] + 180) % 360)
+    distance_km = speed_ms * (lead_minutes * 60) / 1000.0
+    km_lat, km_lon = _km_per_deg(lat)
+    dlat = (distance_km * np.cos(to_rad)) / km_lat
+    dlon = (distance_km * np.sin(to_rad)) / km_lon
+    return lat + dlat, lon + dlon
+
+
+def advect_hazards(hazards, lead_minutes):
+    """Apply advect_point to a list of hazard dicts (main.py calls this on
+    the cached "now" detections per-request instead of re-running the full
+    ~15s RainViewer+Blitzortung fetch for every lead_time)."""
+    if lead_minutes <= 0:
+        return hazards
+    out = []
+    for h in hazards:
+        lat, lon = advect_point(h["lat"], h["lon"], lead_minutes)
+        out.append({**h, "lat": lat, "lon": lon})
+    return out
 
 
 def detect(reflectivity=None, strikes=None):
@@ -75,26 +133,34 @@ def detect(reflectivity=None, strikes=None):
     hazards = []
 
     for s in strikes:
-        hazards.append({"lat": s["lat"], "lon": s["lon"], "type": "lightning", "severity": "moderate"})
+        # A real strike is inherently an immediate hazard, not a graded
+        # risk — always "high" (red), unlike hail's threshold-based tiers.
+        hazards.append({"lat": s["lat"], "lon": s["lon"], "type": "lightning", "severity": "high"})
 
     ys, xs = np.where(reflectivity >= HAIL_REFLECTIVITY_MIN_DBZ)
     for y, x in zip(ys.tolist(), xs.tolist()):
         cell_lat, cell_lon = float(lat_grid[y, x]), float(lon_grid[y, x])
-        severity = "moderate"
+        dbz = float(reflectivity[y, x])
+        if dbz >= HAIL_HIGH_DBZ:
+            severity = "high"
+        elif dbz >= HAIL_MODERATE_DBZ:
+            severity = "moderate"
+        else:
+            severity = "low"
         if strikes:
             km_lat, km_lon = _km_per_deg(cell_lat)
             nearest_km = min(
                 np.hypot((cell_lat - s["lat"]) * km_lat, (cell_lon - s["lon"]) * km_lon) for s in strikes
             )
             if nearest_km <= LIGHTNING_PROXIMITY_KM:
-                severity = "high"
+                severity = _bump_severity(severity)
         hazards.append(
             {
                 "lat": cell_lat,
                 "lon": cell_lon,
                 "type": "hail",
                 "severity": severity,
-                "reflectivity_dbz": round(float(reflectivity[y, x]), 1),
+                "reflectivity_dbz": round(dbz, 1),
             }
         )
 

@@ -297,18 +297,26 @@ def set_region(key: str):
 
 
 @app.get("/hazards")
-def hazards(lead_time: int = Query(0, description="unused — see note below, kept for API compatibility")):
+def hazards(lead_time: int = Query(0, ge=0, le=360, description="minutes; advects points by real ECMWF wind, see note")):
     """Real hail + lightning hazard points across all of India (see
     models/hazard_india.py), served from a background-refreshed cache
     (~3min cadence — a live fetch takes ~15s, too slow per-request).
-    `lead_time` has no effect here: there's no real forecast mechanism for
-    country-scale hail/lightning (unlike the per-region demo's pySTEPS
-    cloudburst extrapolation), only "now". The old per-region, all-4-hazard
-    demo view (synthetic-backed downburst/cloudburst included) is still
-    available at /hazards/region for whichever city is active."""
+
+    `lead_time` does NOT re-run detection at a future time — there's no
+    real all-India forecast mechanism for hail/lightning (same reason
+    cloudburst/downburst were dropped entirely, see hazard_india.py).
+    Instead each point is advected by the real ECMWF wind vector at its
+    location: a standard simplified nowcasting technique (storms roughly
+    follow the steering flow), NOT a re-detected forecast — today's real
+    detections, moved along today's real wind. The old per-region, all-4-
+    hazard demo view (synthetic-backed downburst/cloudburst included) is
+    still available at /hazards/region for whichever city is active."""
     with _lock:
         india_hazards = list(_india_hazards_cache["hazards"])
         error = _india_hazards_cache["error"]
+
+    if lead_time > 0 and india_hazards:
+        india_hazards = hazard_india.advect_hazards(india_hazards, lead_time)
 
     features = [
         {
@@ -318,14 +326,17 @@ def hazards(lead_time: int = Query(0, description="unused — see note below, ke
                 "hazards": [
                     {k: v for k, v in h.items() if k not in ("lat", "lon")}
                 ],
+                "lead_minutes": lead_time,
             },
         }
         for h in india_hazards
     ]
     note = "real hail (RainViewer) + lightning (Blitzortung) across all of India"
+    if lead_time > 0:
+        note += f"; positions advected {lead_time}min by real ECMWF wind, not a re-detected forecast"
     if error and not india_hazards:
         note = f"all-India hazard detection unavailable ({error}) — showing last known / empty"
-    return {"type": "FeatureCollection", "features": features, "lead_time_minutes": 0, "note": note}
+    return {"type": "FeatureCollection", "features": features, "lead_time_minutes": lead_time, "note": note}
 
 
 @app.get("/hazards/region")
