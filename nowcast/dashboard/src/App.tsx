@@ -31,8 +31,8 @@ import {
   useRawLayers,
   useForecastSummary,
   useNowcastFrame,
-  useLazyWeatherLayers,
-  useLazyWindVectors,
+  useWeatherLayers,
+  useWindVectors,
 } from "./hooks/useNowcastData";
 import type { ModelId, RegionForecast, HazardsResponse, RawLayer, WeatherLayer, WindPoint, NowcastFrame } from "./types";
 
@@ -66,8 +66,8 @@ function Dashboard() {
   const rawLayers = useRawLayers();
   const forecastSummary = useForecastSummary(model);
   const nowcastFrame = useNowcastFrame(model, leadMinutes, modelFrameVisible);
-  const weatherLayers = useLazyWeatherLayers();
-  const windVectors = useLazyWindVectors();
+  const weatherLayers = useWeatherLayers(leadMinutes, activeVar !== "none");
+  const windVectors = useWindVectors(leadMinutes, activeVar === "wind_speed");
 
   useEffect(() => {
     setApiUnreachable(Boolean(hazards.error && hazards.error.includes("Failed to fetch")));
@@ -98,11 +98,6 @@ function Dashboard() {
     setLeadMinutes(0);
   }, [model]);
 
-  useEffect(() => {
-    if (activeVar !== "none") weatherLayers.load();
-    if (activeVar === "wind_speed") windVectors.load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeVar]);
 
   // simple auto-play: advance the lead-time slider one step per second
   const playRef = useRef({ model, leadMinutes });

@@ -382,14 +382,16 @@ def raw_layers():
 
 
 @app.get("/weather-layers")
-def weather_layers():
+def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF snaps to its nearest 3h step")):
     """Temperature/humidity/wind-speed as colored map overlays across the
     wide demo region (§WIDE_BBOX) — not just the narrow storm bbox used for
     radar/satellite/hazards. Real ECMWF Open Data when USE_LIVE_ECMWF=true,
     otherwise synthetic (see processing/weather_fields.py) — the response
     always reports which one actually happened, since a live fetch failure
-    silently falls back to synthetic."""
-    g = weather_fields.generate_grid()
+    silently falls back to synthetic. `lead_time` lets the frontend animate
+    this alongside the hazard/nowcast lead-time slider instead of only ever
+    showing "now"."""
+    g = weather_fields.generate_grid(lead_time)
     layers = [
         {
             "id": "temperature",
@@ -426,9 +428,9 @@ def weather_layers():
 
 
 @app.get("/wind-vectors")
-def wind_vectors():
+def wind_vectors(lead_time: int = Query(0, description="minutes ahead, same semantics as /weather-layers")):
     """Sparse wind arrow points (speed + direction) for symbol rendering."""
-    return {"points": weather_fields.wind_vector_points()}
+    return {"points": weather_fields.wind_vector_points(t_min=lead_time)}
 
 
 @app.get("/region-forecast")

@@ -58,40 +58,44 @@ export function useRawLayers(): FetchState<RawLayersResponse> {
   return state;
 }
 
-/** Weather layers and wind vectors are lazy: only fetched once a variable is
- * actually selected, since they're not needed for the primary hazard demo. */
-export function useLazyWeatherLayers() {
+/** Weather layers and wind vectors are enabled only once a variable is
+ * actually selected (not needed for the primary hazard demo), but once
+ * enabled they re-fetch on every leadMinutes change — same lead-time state
+ * that drives hazards/nowcast-frame, so the existing Play/Pause button
+ * animates the weather overlay through the full 0-6h window too, instead of
+ * it staying frozen at "now". */
+export function useWeatherLayers(leadMinutes: number, enabled: boolean): FetchState<WeatherLayersResponse> {
   const [state, setState] = useState<FetchState<WeatherLayersResponse>>({ data: null, loading: false, error: null });
-  const load = useCallback(async () => {
-    if (state.data) return state.data;
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
-    try {
-      const data = await api.weatherLayers();
-      setState({ data, loading: false, error: null });
-      return data;
-    } catch (e) {
-      setState({ data: null, loading: false, error: describeError(e) });
-      return null;
-    }
-  }, [state.data]);
-  return { ...state, load };
+    api
+      .weatherLayers(leadMinutes)
+      .then((data) => !cancelled && setState({ data, loading: false, error: null }))
+      .catch((e) => !cancelled && setState((s) => ({ ...s, loading: false, error: describeError(e) })));
+    return () => {
+      cancelled = true;
+    };
+  }, [leadMinutes, enabled]);
+  return state;
 }
 
-export function useLazyWindVectors() {
+export function useWindVectors(leadMinutes: number, enabled: boolean): FetchState<WindVectorsResponse> {
   const [state, setState] = useState<FetchState<WindVectorsResponse>>({ data: null, loading: false, error: null });
-  const load = useCallback(async () => {
-    if (state.data) return state.data;
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
-    try {
-      const data = await api.windVectors();
-      setState({ data, loading: false, error: null });
-      return data;
-    } catch (e) {
-      setState({ data: null, loading: false, error: describeError(e) });
-      return null;
-    }
-  }, [state.data]);
-  return { ...state, load };
+    api
+      .windVectors(leadMinutes)
+      .then((data) => !cancelled && setState({ data, loading: false, error: null }))
+      .catch((e) => !cancelled && setState((s) => ({ ...s, loading: false, error: describeError(e) })));
+    return () => {
+      cancelled = true;
+    };
+  }, [leadMinutes, enabled]);
+  return state;
 }
 
 export function useForecastSummary(model: ModelId): FetchState<ForecastSummary> {

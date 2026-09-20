@@ -43,8 +43,8 @@ export const api = {
   hazards: (leadMinutes: number) => getJSON<HazardsResponse>(`/hazards?lead_time=${leadMinutes}`),
   stormEta: () => getJSON<StormEtaResponse>("/storm-eta"),
   rawLayers: () => getJSON<RawLayersResponse>("/raw-layers"),
-  weatherLayers: () => getJSON<WeatherLayersResponse>("/weather-layers"),
-  windVectors: () => getJSON<WindVectorsResponse>("/wind-vectors"),
+  weatherLayers: (leadMinutes: number) => getJSON<WeatherLayersResponse>(`/weather-layers?lead_time=${leadMinutes}`),
+  windVectors: (leadMinutes: number) => getJSON<WindVectorsResponse>(`/wind-vectors?lead_time=${leadMinutes}`),
   regionForecast: (lat: number, lon: number, leadMinutes: number) =>
     getJSON<RegionForecast>(`/region-forecast?lat=${lat}&lon=${lon}&lead_time=${leadMinutes}`),
   forecast: (model: ModelId) => getJSON<ForecastSummary>(`/forecast?model=${model}`),
