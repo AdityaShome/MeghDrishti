@@ -29,13 +29,32 @@
 
 * { box-sizing: border-box; }
 
-html, body, #root {
+html, body {
   margin: 0;
   height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: "Inter", system-ui, -apple-system, sans-serif;
+  /* overflow managed per-view: dashboard uses overflow:hidden, homepage uses overflow:auto */
+}
+
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  overflow: auto;
+}
+
+/* Dashboard view: lock body scroll */
+body.dashboard-view {
   overflow: hidden;
+}
+/* Homepage view: allow body scroll */
+body.home-view {
+  overflow: auto;
+  height: auto;
 }
 
 .mono { font-family: "JetBrains Mono", monospace; }
