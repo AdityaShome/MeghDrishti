@@ -1,13 +1,12 @@
 import { MapPin } from "lucide-react";
+import logo from "../assets/logo.png";
 
 export function TopBar({ apiOk, lastUpdated }: { apiOk: boolean; lastUpdated: Date | null }) {
   return (
     <div className="topbar">
       <div className="brand">
         <div className="brand-mark">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-          </svg>
+          <img src={logo} alt="MeghDrishti logo" width={26} height={26} style={{ borderRadius: 6, objectFit: "cover" }} />
         </div>
         <div className="brand-text">
           <h1>
