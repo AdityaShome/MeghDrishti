@@ -27,7 +27,7 @@ import { RegionFloating } from "./components/RegionFloating";
 import { AreaFloating } from "./components/AreaFloating";
 import { Play, Pause, Frame } from "lucide-react";
 
-import { api, API_BASE } from "./api";
+import { api, API_BASE, ApiError } from "./api";
 import {
   useHazards,
   useStormEta,
@@ -64,6 +64,8 @@ function Dashboard() {
   const [area, setArea] = useState<Bbox | null>(null);
   const [areaLeadMinutes, setAreaLeadMinutes] = useState(0);
   const [areaReading, setAreaReading] = useState<AreaForecast | null>(null);
+  const [areaError, setAreaError] = useState<string | null>(null);
+  const [areaLoading, setAreaLoading] = useState(false);
   const [activePanel, setActivePanel] = useState<ActivePanel>("none");
   const [isPlaying, setIsPlaying] = useState(false);
   const [apiUnreachable, setApiUnreachable] = useState(false);
@@ -172,6 +174,8 @@ function Dashboard() {
     setArea(bbox);
     setAreaLeadMinutes(0);
     setAreaReading(null);
+    setAreaError(null);
+    setAreaLoading(true);
     const [lonMin, latMin, lonMax, latMax] = bbox;
     map?.fitBounds(
       [
@@ -181,21 +185,34 @@ function Dashboard() {
       { padding: 80, duration: 800 }
     );
     try {
+      // The first request in a while can genuinely take several seconds
+      // when USE_LIVE_ECMWF is on: weather_fields.generate_grid() cold-
+      // fetches three separate GRIB files from ECMWF before its in-process
+      // cache is warm. areaLoading is what keeps the panel from looking
+      // frozen during that wait.
       const reading = await api.areaForecast(bbox, 0);
       setAreaReading(reading);
-    } catch {
-      // area panel just stays in its loading state; not worth a banner for this
+    } catch (e) {
+      console.error("[area-forecast] fetch failed", e);
+      setAreaError(e instanceof ApiError ? `API ${e.status} on ${e.path}` : "request failed — see console");
+    } finally {
+      setAreaLoading(false);
     }
   }
 
   async function onAreaLeadChange(m: number) {
     setAreaLeadMinutes(m);
     if (!area) return;
+    setAreaLoading(true);
     try {
       const reading = await api.areaForecast(area, m);
       setAreaReading(reading);
-    } catch {
-      /* keep last known reading on transient failure */
+      setAreaError(null);
+    } catch (e) {
+      console.error("[area-forecast] fetch failed", e);
+      setAreaError(e instanceof ApiError ? `API ${e.status} on ${e.path}` : "request failed — see console");
+    } finally {
+      setAreaLoading(false);
     }
   }
 
@@ -387,6 +404,8 @@ function Dashboard() {
               <AreaFloating
                 bbox={area}
                 reading={areaReading}
+                loading={areaLoading}
+                error={areaError}
                 leadMinutes={areaLeadMinutes}
                 onLeadChange={onAreaLeadChange}
                 hazardCount={hazardsInBbox(hazards.data, area)}

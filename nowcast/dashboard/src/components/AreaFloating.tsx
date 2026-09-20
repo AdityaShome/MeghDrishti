@@ -1,11 +1,18 @@
 import { X } from "lucide-react";
 import type { AreaForecast, Bbox } from "../types";
 
-function statRow(label: string, unit: string, stat: { min: number; mean: number; max: number } | null | undefined) {
+function statRow(
+  label: string,
+  unit: string,
+  stat: { min: number; mean: number; max: number } | null | undefined,
+  loading: boolean
+) {
   return (
     <div className="hazard-stat" style={{ flexDirection: "row", justifyContent: "space-between" }}>
       <span className="lbl">{label}</span>
-      <span className="val">{stat ? `${stat.min}–${stat.max}${unit} (avg ${stat.mean}${unit})` : "…"}</span>
+      <span className="val">
+        {stat ? `${stat.min}–${stat.max}${unit} (avg ${stat.mean}${unit})` : loading ? "loading…" : "—"}
+      </span>
     </div>
   );
 }
@@ -13,6 +20,8 @@ function statRow(label: string, unit: string, stat: { min: number; mean: number;
 export function AreaFloating({
   bbox,
   reading,
+  loading,
+  error,
   leadMinutes,
   onLeadChange,
   hazardCount,
@@ -20,6 +29,8 @@ export function AreaFloating({
 }: {
   bbox: Bbox;
   reading: AreaForecast | null;
+  loading: boolean;
+  error: string | null;
   leadMinutes: number;
   onLeadChange: (m: number) => void;
   hazardCount: number;
@@ -42,11 +53,21 @@ export function AreaFloating({
         <div className="region-coords">
           {latMin.toFixed(2)}–{latMax.toFixed(2)}°N, {lonMin.toFixed(2)}–{lonMax.toFixed(2)}°E (~{widthKm}×{heightKm}km)
         </div>
+        {error && (
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--danger)" }}>
+            Couldn't load area stats: {error}
+          </div>
+        )}
+        {loading && !reading && (
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-dim)" }}>
+            Loading — the first fetch can take a few seconds…
+          </div>
+        )}
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-          {statRow("Temperature", "°C", reading?.temperature_c)}
-          {statRow("Humidity", "%", reading?.humidity_pct)}
-          {statRow("Wind speed", "m/s", reading?.wind_speed_ms)}
-          {statRow("Pressure", "hPa", reading?.pressure_hpa)}
+          {statRow("Temperature", "°C", reading?.temperature_c, loading)}
+          {statRow("Humidity", "%", reading?.humidity_pct, loading)}
+          {statRow("Wind speed", "m/s", reading?.wind_speed_ms, loading)}
+          {statRow("Pressure", "hPa", reading?.pressure_hpa, loading)}
           <div className="hazard-stat" style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <span className="lbl">Cloudburst rain rate</span>
             <span className="val">
@@ -54,7 +75,9 @@ export function AreaFloating({
                 ? reading.cloudburst_rainrate_mm_hr === null
                   ? "n/a (outside storm grid)"
                   : `${reading.cloudburst_rainrate_mm_hr.min}–${reading.cloudburst_rainrate_mm_hr.max} mm/hr`
-                : "…"}
+                : loading
+                  ? "loading…"
+                  : "—"}
             </span>
           </div>
           <div className="hazard-stat" style={{ flexDirection: "row", justifyContent: "space-between" }}>
