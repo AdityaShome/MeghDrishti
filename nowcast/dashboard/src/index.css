@@ -358,7 +358,14 @@ input[type="range"]::-webkit-slider-thumb {
 .select-field {
   width: 100%; background: rgba(255,255,255,0.04); color: var(--text);
   border: 1px solid var(--panel-border); border-radius: 6px; padding: 7px 8px; font-size: 12px;
-  font-family: inherit;
+  font-family: inherit; color-scheme: dark;
+}
+/* The dropdown's own popup list ignores most CSS and otherwise defaults to
+   the OS light theme regardless of the closed <select>'s styling above —
+   color-scheme is what actually darkens it in Chromium/Firefox; these two
+   are a fallback for engines that still render it white. */
+.select-field option {
+  background: var(--bg); color: var(--text);
 }
 .real-badge {
   display: inline-block; background: rgba(52,211,153,0.15); color: var(--ok);
