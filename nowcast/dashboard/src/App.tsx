@@ -406,12 +406,9 @@ function Dashboard() {
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
                     <div style={{ width: 10, height: 10, background: "var(--lightning)", border: "1px solid #fff", borderRadius: "2px" }} /> Lightning
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
-                    <div style={{ width: 10, height: 10, background: "var(--downburst)", border: "1px solid #fff", borderRadius: "2px" }} /> Downburst
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
-                    <div style={{ width: 10, height: 10, background: "var(--cloudburst)", border: "1px solid #fff", borderRadius: "2px" }} /> Cloudburst
-                  </div>
+                </div>
+                <div style={{ fontSize: 9.5, color: "var(--text-faint)", marginTop: 8, lineHeight: 1.4 }}>
+                  Real, all of India, right now — RainViewer reflectivity + Blitzortung lightning.
                 </div>
               </div>
             </div>

@@ -16,6 +16,7 @@ live mode, so the downburst hazard rule (needs a real velocity couplet) never be
 "real" this way. Document this clearly wherever radar_puller output feeds into hazard
 rules.
 """
+import concurrent.futures
 import os
 import sys
 
@@ -29,6 +30,7 @@ from nowcast.configs.settings import get_region_bbox
 
 TILE_SIZE = 256
 ZOOM = 10  # ~0.35 deg/tile at the equator, well under REGION_BBOX's ~0.5 deg extent
+INDIA_ZOOM = 6  # ~5.6 deg/tile — keeps an all-India fetch to ~30-40 tiles instead of thousands
 
 
 def _latlon_to_tile(lat, lon, zoom):
@@ -71,23 +73,44 @@ def _latest_frame_path():
     return host, past_frames[-1]["path"]  # most recent
 
 
-def fetch_reflectivity(grid_size=64):
-    """Real reflectivity grid over the active region's bbox, regridded to (grid_size, grid_size)."""
+def fetch_reflectivity(grid_size=64, bbox=None, zoom=None):
+    """Real reflectivity grid over `bbox` (defaults to the active region's
+    storm-scale bbox), regridded to (grid_size, grid_size). Pass a coarser
+    `zoom` for a large bbox (see INDIA_ZOOM / fetch_india_reflectivity) —
+    tile count grows with (bbox extent / tile extent)^2, and ZOOM=10's
+    ~0.35deg tiles would mean thousands of requests across all of India."""
+    if bbox is None:
+        bbox = get_region_bbox()
+    if zoom is None:
+        zoom = ZOOM
     host, frame_path = _latest_frame_path()
 
-    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
-    x_min, y_max = _latlon_to_tile(lat_min, lon_min, ZOOM)  # smaller lat -> larger y
-    x_max, y_min = _latlon_to_tile(lat_max, lon_max, ZOOM)
+    lon_min, lat_min, lon_max, lat_max = bbox
+    x_min, y_max = _latlon_to_tile(lat_min, lon_min, zoom)  # smaller lat -> larger y
+    x_max, y_min = _latlon_to_tile(lat_max, lon_max, zoom)
     tx_range = range(int(np.floor(x_min)), int(np.floor(x_max)) + 1)
     ty_range = range(int(np.floor(y_min)), int(np.floor(y_max)) + 1)
 
+    def _fetch_one(txy):
+        tx, ty = txy
+        url = f"{host}{frame_path}/{TILE_SIZE}/{zoom}/{tx}/{ty}/0/0_0.png"
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        return txy, _decode_dbz(r.content)
+
+    tile_coords = [(tx, ty) for ty in ty_range for tx in tx_range]
     tiles = {}
-    for ty in ty_range:
-        for tx in tx_range:
-            url = f"{host}{frame_path}/{TILE_SIZE}/{ZOOM}/{tx}/{ty}/0/0_0.png"
-            r = requests.get(url, timeout=10)
-            r.raise_for_status()
-            tiles[(tx, ty)] = _decode_dbz(r.content)
+    # Sequential is fine for a handful of tiles (single-region fetch); a
+    # country-wide fetch is 30-40+ tiles, so fan them out concurrently to
+    # keep total latency close to one round-trip instead of the sum of all.
+    if len(tile_coords) <= 4:
+        for txy in tile_coords:
+            k, v = _fetch_one(txy)
+            tiles[k] = v
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+            for k, v in pool.map(_fetch_one, tile_coords):
+                tiles[k] = v
 
     tx0, ty0 = min(tx_range), min(ty_range)
     mosaic = np.zeros((len(ty_range) * TILE_SIZE, len(tx_range) * TILE_SIZE), dtype=np.float32)
@@ -105,8 +128,8 @@ def fetch_reflectivity(grid_size=64):
     # lat_bottom from the NW tile) silently produced a degenerate or reversed
     # latitude array whenever a region's bbox spanned >1 tile row — Kolkata's
     # bbox does, Pune's happened not to, which is why this only surfaced now.
-    mosaic_lon_min, _, _, mosaic_lat_max = _tile_bounds(tx0, ty0, ZOOM)
-    _, mosaic_lat_min, mosaic_lon_max, _ = _tile_bounds(max(tx_range), max(ty_range), ZOOM)
+    mosaic_lon_min, _, _, mosaic_lat_max = _tile_bounds(tx0, ty0, zoom)
+    _, mosaic_lat_min, mosaic_lon_max, _ = _tile_bounds(max(tx_range), max(ty_range), zoom)
 
     src_lons = np.linspace(mosaic_lon_min, mosaic_lon_max, mosaic.shape[1])
     src_lats = np.linspace(mosaic_lat_max, mosaic_lat_min, mosaic.shape[0])  # row 0 = top = max lat
@@ -123,6 +146,14 @@ def fetch_reflectivity(grid_size=64):
     dst_lon_grid, dst_lat_grid = np.meshgrid(dst_lons, dst_lats)
     pts = np.stack([dst_lat_grid.ravel(), dst_lon_grid.ravel()], axis=-1)
     return interp(pts).reshape(dst_lat_grid.shape).astype(np.float32)
+
+
+def fetch_india_reflectivity(grid_size):
+    """Real reflectivity across all of India (settings.INDIA_BBOX), at a
+    coarser zoom than the per-region fetch — used by hazard_india.py."""
+    from nowcast.configs.settings import INDIA_BBOX
+
+    return fetch_reflectivity(grid_size=grid_size, bbox=INDIA_BBOX, zoom=INDIA_ZOOM)
 
 
 if __name__ == "__main__":

@@ -35,13 +35,18 @@ LISTEN_SECONDS = 6
 BBOX_PAD_DEG = 1.0  # catch strikes just outside REGION_BBOX that still matter to edge stations
 
 
-def fetch_strikes():
-    """Real lightning strikes seen in a short listen window, within a padded REGION_BBOX.
+def fetch_strikes(bbox=None, listen_seconds=None):
+    """Real lightning strikes seen in a short listen window, within a padded
+    `bbox` (defaults to the active region's storm-scale bbox — pass
+    settings.INDIA_BBOX for all-India, see fetch_india_strikes).
 
     Returns list of {lat, lon, time_unix} dicts (may be empty). Strike
     `time` from Blitzortung is nanoseconds since epoch; converted to seconds.
     """
-    lon_min, lat_min, lon_max, lat_max = get_region_bbox()
+    if bbox is None:
+        bbox = get_region_bbox()
+    listen_seconds = listen_seconds or LISTEN_SECONDS
+    lon_min, lat_min, lon_max, lat_max = bbox
     lon_min, lat_min = lon_min - BBOX_PAD_DEG, lat_min - BBOX_PAD_DEG
     lon_max, lat_max = lon_max + BBOX_PAD_DEG, lat_max + BBOX_PAD_DEG
 
@@ -66,9 +71,9 @@ def fetch_strikes():
     client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2)
     client.on_connect = on_connect
     client.on_message = on_message
-    client.connect(BROKER_HOST, BROKER_PORT, keepalive=LISTEN_SECONDS + 5)
+    client.connect(BROKER_HOST, BROKER_PORT, keepalive=listen_seconds + 5)
     client.loop_start()
-    time.sleep(LISTEN_SECONDS)
+    time.sleep(listen_seconds)
     client.loop_stop()
     client.disconnect()
 
@@ -76,6 +81,16 @@ def fetch_strikes():
         raise RuntimeError(f"could not connect to Blitzortung broker {BROKER_HOST}:{BROKER_PORT}")
 
     return strikes
+
+
+def fetch_india_strikes(listen_seconds=12):
+    """Real lightning strikes across all of India (settings.INDIA_BBOX) —
+    used by hazard_india.py. A longer listen window than the per-region
+    default since India is ~60x the area, giving the sparse public network
+    a better chance of catching a strike in whatever storms exist right now."""
+    from nowcast.configs.settings import INDIA_BBOX
+
+    return fetch_strikes(bbox=INDIA_BBOX, listen_seconds=listen_seconds)
 
 
 if __name__ == "__main__":

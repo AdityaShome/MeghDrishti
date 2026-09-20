@@ -54,7 +54,10 @@ function buildRows(hazards: HazardsResponse | null, stormCells: StormCell[] | nu
   });
 }
 
-const ALL_TYPES: HazardType[] = ["hail", "downburst", "cloudburst", "lightning"];
+// /hazards is now real, all-India hail+lightning — downburst/cloudburst
+// have no real all-India equivalent (see hazard_india.py) and were
+// dropped from the filter row rather than always showing an empty result.
+const ALL_TYPES: HazardType[] = ["hail", "lightning"];
 
 export function HazardsPage({
   hazards,

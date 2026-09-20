@@ -1,17 +1,23 @@
 # MeghDrishti — One-Page Write-Up
 
 Convective-scale nowcasting demo (SIH 2026): 0-6h thunderstorm/hail/downburst/cloudburst
-nowcasting for a demo region (Pune district, Maharashtra), fusing radar, satellite, and
-lightning data on a GIS dashboard with storm-arrival countdowns.
+nowcasting, fusing radar, satellite, and lightning data on a GIS dashboard with
+storm-arrival countdowns. The dashboard's default hazard view detects real hail and
+lightning across all of India right now (`nowcast/models/hazard_india.py`) — no demo city,
+no synthetic storm. A second, older mode still exists underneath: a per-region demo
+(`/hazards/region`, all 4 hazard types, downburst/cloudburst synthetic-backed) for
+whichever of 10 major cities is picked, which still drives the Forecast/Replay pages'
+pySTEPS/DGMR features.
 
 ## Data sources: real vs. synthetic
 
-**Hazard/satellite/radar data (hail, downburst, cloudburst, satellite, radar) is still
-synthetic.** No MOSDAC or IMD *nowcast API* credentials have been granted yet (registration
-is the single longest-lead-time item and hasn't been completed by the team) — see
-`README.md` for exact next steps. Every ingestion module (`nowcast/ingestion/*.py`) is
-written with a `_fetch_live()`/live-fetch stub matching the documented real API/schema, and
-a clearly-labeled mock generator as the fallback path.
+No MOSDAC or IMD *nowcast API* credentials have been granted yet (registration is the
+single longest-lead-time item and hasn't been completed by the team) — see `README.md`
+for exact next steps. In the meantime, most of the pipeline runs on other real, free
+sources instead of staying synthetic — see the table below for exactly what's real and
+what's synthetic per layer. Every ingestion module (`nowcast/ingestion/*.py`) is written
+with a `_fetch_live()`/live-fetch stub matching the documented real API/schema, and a
+clearly-labeled mock generator as the fallback path.
 
 Two pieces of the pipeline now have real, opt-in live data instead, each behind a
 `USE_LIVE_*` flag in `.env` (see `.env.example`), each falling back to synthetic
@@ -66,7 +72,8 @@ automatically on any fetch failure:
 | Temp/humidity/wind at stations | IMD nowcast API | **Real via Tomorrow.io when `USE_LIVE_IMD=true`**, else synthetic | No lightning field, hence the separate Blitzortung path above |
 | Weather-variable grid (temp/humidity/wind overlays) | ECMWF Open Data HRES | **Real when `USE_LIVE_ECMWF=true`**, else synthetic climatology+storm perturbation | No API key needed; falls back to synthetic on any failure |
 | Satellite tir1 | INSAT-3D/3DR via MOSDAC (`mdapi.py`) | **Real via Copernicus Sentinel-3 SLSTR when `USE_LIVE_SATELLITE=true`**, else synthetic | Free CDSE account, verified live; wv/mwir stay synthetic regardless |
-| Radar reflectivity | MOSDAC volumetric DWR (TERLS/SHAR) via `pyiwr`/Py-ART | **Real via RainViewer when `USE_LIVE_RADAR=true`**, else synthetic moving Gaussian cell | Genuine greyscale-to-dBZ decode, no API key |
+| Radar reflectivity | MOSDAC volumetric DWR (TERLS/SHAR) via `pyiwr`/Py-ART | **Real via RainViewer when `USE_LIVE_RADAR=true`**, all of India for the default hazard view/`/raw-layers`, else synthetic moving Gaussian cell | Genuine greyscale-to-dBZ decode, no API key |
+| Hail + lightning hazards (default view) | IMD nowcast API | **Real, all of India, right now** — RainViewer reflectivity + Blitzortung strikes, `nowcast/models/hazard_india.py` | No synthetic storm; independent of the region picker entirely |
 | Radar radial velocity (downburst) | MOSDAC volumetric DWR | Synthetic velocity couplet | No public source publishes raw Doppler scans |
 
 **The map's GIS base/overlay layers are real, not synthetic.** 16 overlay layers (LULC,
@@ -139,13 +146,19 @@ fixed) so the demo reads as one coherent storm, not disconnected synthetic layer
 
 ## Definition of done — status
 
-All items below are demoable, using synthetic data throughout (see table above):
+All items below are demoable — see the table above for exactly which are real vs.
+synthetic (most now run on real data, opt-in via `.env`):
 
-- [x] Live map showing hazard data (thunderstorm/lightning/hail categories) for the demo region — synthetic
-- [x] Satellite IR overlay aligned on the same map — synthetic
-- [x] pySTEPS-based 0-6h extrapolation driving the cloudburst hazard layer — synthetic input, real pySTEPS
-- [x] Hail (grid rule) and downburst (velocity couplet) computed with documented thresholds
+- [x] Live map showing hazard data (lightning/hail categories), default view real and
+      all-India, not scoped to a demo region
+- [x] Satellite IR overlay aligned on the same map — real (Copernicus Sentinel-3),
+      region-scoped
+- [x] pySTEPS-based 0-6h extrapolation driving the cloudburst hazard layer (per-region
+      demo mode, `/hazards/region`) — synthetic input, real pySTEPS
+- [x] Hail (grid rule, real all-India by default) and downburst (velocity couplet,
+      synthetic — no real source exists) computed with documented thresholds
 - [x] Storm-arrival countdown clock, ETA derived from real pySTEPS motion estimation
+      (per-region demo mode)
 - [x] This write-up
 
 **Stretch goals achieved**:
@@ -153,6 +166,13 @@ All items below are demoable, using synthetic data throughout (see table above):
   Model choices above for the calibration caveat.
 - Real ISRO/MOSDAC/Bhuvan GIS base and overlay layers (23 total) — not part of the
   original plan, added directly from a real source the user pointed to.
+- Real hail + lightning detection across all of India, independent of the region picker
+  entirely — not part of the original plan (which scoped everything to one demo region);
+  added once real radar (RainViewer) and lightning (Blitzortung) sources existed to make
+  it possible without a synthetic storm.
+- Real weather sources beyond the original plan's scope: Tomorrow.io, ECMWF Open Data,
+  RainViewer, Blitzortung.org, Copernicus Sentinel-3 (EUMETSAT MSG SEVIRI written but
+  blocked on a licensing 403, see README).
 
 **Not done**: multi-region coverage, historical validation against Bhuvan LDSN,
 SmaAt-UNet fine-tuning. Out of scope until real hazard-data access exists.

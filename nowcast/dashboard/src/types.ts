@@ -32,6 +32,7 @@ export interface HazardsResponse {
   type: "FeatureCollection";
   features: HazardFeature[];
   lead_time_minutes: number;
+  note?: string;
 }
 
 export interface StormCell {

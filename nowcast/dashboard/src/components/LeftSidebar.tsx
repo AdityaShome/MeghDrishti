@@ -4,15 +4,16 @@ import type { HazardsResponse, ModelId, RegionsResponse } from "../types";
 import { INGEST_CYCLE_MINUTES } from "../lib/config";
 import { api } from "../api";
 
+// /hazards is now real, all-India hail+lightning (see hazard_india.py) —
+// downburst/cloudburst have no real all-India equivalent and were dropped
+// from the default view rather than always showing a dishonest 0.
 const HAZARD_LABELS: Record<string, string> = {
   hail: "Hail",
   lightning: "Lightning",
-  downburst: "Downburst",
-  cloudburst: "Cloudburst",
 };
 
 function countByType(hazards: HazardsResponse | null): Record<string, number> {
-  const counts: Record<string, number> = { hail: 0, lightning: 0, downburst: 0, cloudburst: 0 };
+  const counts: Record<string, number> = { hail: 0, lightning: 0 };
   if (!hazards) return counts;
   for (const f of hazards.features) {
     for (const h of f.properties.hazards) {

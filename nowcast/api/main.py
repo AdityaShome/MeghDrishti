@@ -34,6 +34,7 @@ from nowcast.ingestion.imd_nowcast import pull as pull_imd
 from nowcast.ingestion.satellite_insat import pull as pull_satellite
 from nowcast.ingestion.radar_puller import pull as pull_radar
 from nowcast.models.hazard import classify_station, hail_cells, downburst_cells
+from nowcast.models import hazard_india
 from nowcast.models.eta import storm_cells
 from nowcast.models.pysteps_baseline import run_forecast, cloudburst_cells
 from nowcast.processing.fusion import build_fused_frame, list_imd_timestamps, build_fused_frame_for_timestamp
@@ -64,6 +65,16 @@ _lock = threading.Lock()
 # live ingest, same as before this existed.
 _region_snapshots = {}
 _SNAPSHOT_FRESH_SECONDS = INGEST_CYCLE_MINUTES * 60 * 2
+
+# Real hail+lightning across all of India (hazard_india.py) plus the raw
+# all-India radar image /raw-layers serves — independent of the per-region
+# demo system above, and sharing one RainViewer/Blitzortung fetch between
+# both rather than fetching twice. Cached and refreshed in the background
+# (_india_hazards_loop) rather than per-request: a fetch takes ~15s
+# (RainViewer mosaic + Blitzortung's listen window), too slow to redo on
+# every /hazards or /raw-layers call.
+_india_hazards_cache = {"hazards": [], "reflectivity": None, "computed_at": 0, "error": None}
+_INDIA_HAZARDS_TTL_SECONDS = 180
 
 
 def _refresh_dgmr():
@@ -207,6 +218,29 @@ def _region_prewarm_loop():
         time.sleep(INGEST_CYCLE_MINUTES * 60)
 
 
+def _refresh_india_hazards():
+    try:
+        from nowcast.ingestion.rainviewer_radar import fetch_india_reflectivity
+
+        reflectivity = fetch_india_reflectivity(hazard_india.INDIA_GRID_SIZE)
+        hazards = hazard_india.detect(reflectivity=reflectivity)
+        with _lock:
+            _india_hazards_cache["hazards"] = hazards
+            _india_hazards_cache["reflectivity"] = reflectivity
+            _india_hazards_cache["computed_at"] = time.time()
+            _india_hazards_cache["error"] = None
+    except Exception as exc:
+        print(f"[api] all-India hazard detection failed: {exc}")
+        with _lock:
+            _india_hazards_cache["error"] = str(exc)
+
+
+def _india_hazards_loop():
+    while True:
+        _refresh_india_hazards()
+        time.sleep(_INDIA_HAZARDS_TTL_SECONDS)
+
+
 @app.on_event("startup")
 def startup():
     active = get_active_region_key()
@@ -217,6 +251,8 @@ def startup():
         _ingest_all()
         _refresh()
         _refresh_fusion()
+    _refresh_india_hazards()
+    threading.Thread(target=_india_hazards_loop, daemon=True).start()
     t = threading.Thread(target=_region_prewarm_loop, daemon=True)
     t.start()
 
@@ -261,7 +297,43 @@ def set_region(key: str):
 
 
 @app.get("/hazards")
-def hazards(lead_time: int = Query(0, description="minutes; snaps to nearest pySTEPS lead step")):
+def hazards(lead_time: int = Query(0, description="unused — see note below, kept for API compatibility")):
+    """Real hail + lightning hazard points across all of India (see
+    models/hazard_india.py), served from a background-refreshed cache
+    (~3min cadence — a live fetch takes ~15s, too slow per-request).
+    `lead_time` has no effect here: there's no real forecast mechanism for
+    country-scale hail/lightning (unlike the per-region demo's pySTEPS
+    cloudburst extrapolation), only "now". The old per-region, all-4-hazard
+    demo view (synthetic-backed downburst/cloudburst included) is still
+    available at /hazards/region for whichever city is active."""
+    with _lock:
+        india_hazards = list(_india_hazards_cache["hazards"])
+        error = _india_hazards_cache["error"]
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [h["lon"], h["lat"]]},
+            "properties": {
+                "hazards": [
+                    {k: v for k, v in h.items() if k not in ("lat", "lon")}
+                ],
+            },
+        }
+        for h in india_hazards
+    ]
+    note = "real hail (RainViewer) + lightning (Blitzortung) across all of India"
+    if error and not india_hazards:
+        note = f"all-India hazard detection unavailable ({error}) — showing last known / empty"
+    return {"type": "FeatureCollection", "features": features, "lead_time_minutes": 0, "note": note}
+
+
+@app.get("/hazards/region")
+def hazards_region(lead_time: int = Query(0, description="minutes; snaps to nearest pySTEPS lead step")):
+    """The original per-region demo hazard view (all 4 hazard types,
+    downburst/cloudburst synthetic-backed) for whichever city is active via
+    /regions/{key} — superseded as the dashboard's default by /hazards
+    (real, all-India, hail+lightning only) but kept available here."""
     _refresh()
     features = []
     for rec in _cache["records"]:
@@ -423,20 +495,23 @@ def raw_layers():
 
     Satellite is real (tir1 only) when `USE_LIVE_SATELLITE=true` — see
     satellite_insat.py / copernicus_satellite.py — sourced from Copernicus
-    Sentinel-3 SLSTR, not MOSDAC/INSAT. Radar is real when
-    `USE_LIVE_RADAR=true` — see radar_puller.py / rainviewer_radar.py —
-    sourced from RainViewer, not MOSDAC directly. Same bbox-anchored
-    PNG-overlay contract either way, so the dashboard doesn't change when
-    the source is swapped.
+    Sentinel-3 SLSTR, not MOSDAC/INSAT; still scoped to the active demo
+    region's small bbox (Sentinel-3/EUMETSAT don't give an easy all-India
+    single-request equivalent the way RainViewer does for radar). Radar is
+    real when `USE_LIVE_RADAR=true` — see radar_puller.py /
+    rainviewer_radar.py — sourced from RainViewer across all of India (the
+    same cached fetch /hazards' hail detection uses, see hazard_india.py),
+    not scoped to the active region at all: real weather doesn't confine
+    itself to whichever demo city happens to be selected.
     """
     frame = _refresh_fusion()
     if frame is None:
         return {"layers": [], "note": "no fused frame yet — ingestion still warming up"}
 
+    from nowcast.configs.settings import INDIA_BBOX
     from nowcast.ingestion.radar_puller import USE_LIVE_RADAR
     from nowcast.ingestion.satellite_insat import USE_LIVE_SATELLITE
 
-    radar_source = "rainviewer" if USE_LIVE_RADAR else "synthetic"
     satellite_source = "copernicus-sentinel3" if USE_LIVE_SATELLITE else "synthetic"
     ch = frame["channels"]
     layers = [
@@ -447,14 +522,32 @@ def raw_layers():
             "image": _array_to_png_data_url(ch["tir1"], "gray_r", vmin=190, vmax=300),
             "source": satellite_source,
         },
-        {
-            "id": "radar_reflectivity",
-            "label": "Radar reflectivity (dBZ)",
-            "bbox": frame["bbox"],
-            "image": _array_to_png_data_url(ch["reflectivity_dbz"], "turbo", vmin=0, vmax=65),
-            "source": radar_source,
-        },
     ]
+
+    with _lock:
+        india_reflectivity = _india_hazards_cache["reflectivity"]
+    if USE_LIVE_RADAR and india_reflectivity is not None:
+        radar_source = "rainviewer"
+        layers.append(
+            {
+                "id": "radar_reflectivity",
+                "label": "Radar reflectivity (dBZ) — all India",
+                "bbox": INDIA_BBOX,
+                "image": _array_to_png_data_url(india_reflectivity, "turbo", vmin=0, vmax=65),
+                "source": radar_source,
+            }
+        )
+    else:
+        radar_source = "synthetic"
+        layers.append(
+            {
+                "id": "radar_reflectivity",
+                "label": "Radar reflectivity (dBZ)",
+                "bbox": frame["bbox"],
+                "image": _array_to_png_data_url(ch["reflectivity_dbz"], "turbo", vmin=0, vmax=65),
+                "source": radar_source,
+            }
+        )
     notes = []
     notes.append("satellite real via Copernicus Sentinel-3 SLSTR" if USE_LIVE_SATELLITE else "satellite synthetic")
     notes.append("radar real via RainViewer (IMD-sourced, not direct MOSDAC)" if USE_LIVE_RADAR else "radar synthetic")

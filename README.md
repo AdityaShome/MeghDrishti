@@ -6,6 +6,18 @@ Full plan: [`project.md`](project.md). One-page write-up: [`WRITEUP.md`](WRITEUP
 
 ## Current status — Definition of Done (§8) satisfied
 
+**The dashboard's default hazard view is real and country-wide, not a demo storm near one
+city.** `/hazards` (`nowcast/models/hazard_india.py`) detects real hail and lightning
+across all of India right now, straight from RainViewer reflectivity + Blitzortung
+strikes — no synthetic storm, no fixed demo city. `/raw-layers`' radar overlay is the same
+all-India RainViewer fetch. Downburst and cloudburst have no real all-India equivalent
+(no public Doppler-velocity source anywhere, and no persisted real radar time-series for
+pySTEPS to forecast from) and are intentionally absent from this view rather than faked at
+country scale — see `hazard_india.py`'s docstring. The original per-region demo (all 4
+hazard types, downburst/cloudburst synthetic-backed, for whichever of the 10 cities is
+picked via "Demo region") still exists underneath and now lives at `/hazards/region`,
+still driving the Forecast/Replay pages' pySTEPS/DGMR features.
+
 MOSDAC/IMD *nowcast API* registration is still under review (see Next steps) — while
 waiting, every hazard input has been replaced with **another free, real data source**
 except radar's Doppler velocity (needed for the downburst rule — no public aggregator
@@ -23,8 +35,11 @@ back to synthetic automatically if the live fetch fails.
   via RainViewer (`USE_LIVE_RADAR=true`, no key needed — see
   `nowcast/ingestion/rainviewer_radar.py`): its "Black and White" tile scheme is a direct
   greyscale-to-dBZ encoding, not a rendered color guess, and its India coverage is itself
-  IMD's public radar network republished by a third party. Radial velocity (downburst)
-  stays synthetic even with radar live, since no public source exposes it. Satellite is
+  IMD's public radar network republished by a third party. `fetch_india_reflectivity()`
+  fetches it across the whole country (tiles fanned out concurrently, ~3s) for the default
+  hazard view and `/raw-layers`; `fetch_reflectivity()` still serves the smaller per-region
+  demo bbox. Radial velocity (downburst) stays synthetic even with radar live, since no
+  public source exposes it. Satellite is
   real via two sources (`USE_LIVE_SATELLITE=true`, each needs its own free account):
   EUMETSAT MSG SEVIRI (`nowcast/ingestion/eumetsat_satellite.py`, `EUMETSAT_CONSUMER_KEY`/
   `SECRET`) is tried first — geostationary, continuous coverage — but currently blocked
