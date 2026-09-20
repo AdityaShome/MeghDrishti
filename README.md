@@ -6,17 +6,28 @@ Full plan: [`project.md`](project.md). One-page write-up: [`WRITEUP.md`](WRITEUP
 
 ## Current status — Definition of Done (§8) satisfied
 
-No MOSDAC or IMD *nowcast API* credentials exist yet (see Next steps) — **all hazard/
-storm data below is synthetic**, clearly labeled as such in code and in the dashboard
-itself. All three mock generators (IMD, satellite, radar) share one canonical fake storm
-trajectory (`nowcast/processing/storm_track.py`) so they agree with each other, and every
-ingestion module has a `_fetch_live()` stub with the real API's schema ready to fill in.
-The map's GIS base/overlay layers, however, **are real** — see below.
+No MOSDAC or IMD *nowcast API* credentials exist yet (see Next steps) — **hail/downburst/
+cloudburst grid hazards and satellite/radar are still synthetic**, clearly labeled as such
+in code and in the dashboard itself. The IMD station feed and the weather-variable grid,
+however, now have real opt-in live paths (see below) — set the relevant `USE_LIVE_*` flag
+in `.env` (copy from `.env.example`) to switch them on; every one falls back to synthetic
+automatically if the live fetch fails for any reason. The three mock generators (IMD,
+satellite, radar) share one canonical fake storm trajectory
+(`nowcast/processing/storm_track.py`) so they agree with each other even when synthetic.
 
 - **Ingestion (2a/2b/2c)**: `nowcast/ingestion/{imd_nowcast,satellite_insat,radar_puller}.py`
-  — mock IMD nowcast JSON, synthetic INSAT-like TIR1/WV/MWIR, synthetic radar
-  reflectivity + radial velocity (for downburst). Each runs independently; one failing
-  doesn't block the others (`_ingest_all` in `api/main.py`).
+  — `imd_nowcast.py` has a real live path via Tomorrow.io's realtime weather API
+  (`USE_LIVE_IMD=true` + `TOMORROW_API_KEY`) for real temperature/humidity/wind/precip at
+  the demo stations; it has no lightning field, so lightning/hail categories stay synthetic
+  even in live mode. Satellite (INSAT-like TIR1/WV/MWIR) and radar (reflectivity + radial
+  velocity) are still fully synthetic — no MOSDAC access yet. Each puller runs
+  independently; one failing doesn't block the others (`_ingest_all` in `api/main.py`).
+- **Weather-variable grid**: `nowcast/processing/weather_fields.py` — real ECMWF Open Data
+  (HRES forecast, 0.25°, updated 4x/day) via `nowcast/ingestion/ecmwf_weather.py` when
+  `USE_LIVE_ECMWF=true`. Genuinely free, **no API key needed** — ECMWF's older key-based
+  public-datasets service (`api.ecmwf.int`) was mostly decommissioned in 2023, so this uses
+  their newer unauthenticated Open Data service instead. Falls back to the synthetic
+  climatology+storm-perturbation grid on any failure.
 - **Fusion (§3)**: `nowcast/processing/fusion.py` — regrids and stacks
   `[tir1, wv, mwir, reflectivity, lightning_prob]` into one multi-channel raster,
   rolling buffer scaffold included.

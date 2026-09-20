@@ -201,6 +201,7 @@ function Dashboard() {
                 activeVar={activeVar}
                 onVarChange={setActiveVar}
                 activeVarMeta={activeMeta}
+                weatherSource={weatherLayers.data?.source ?? null}
               />
             )}
 

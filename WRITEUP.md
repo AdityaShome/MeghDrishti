@@ -6,17 +6,33 @@ lightning data on a GIS dashboard with storm-arrival countdowns.
 
 ## Data sources: real vs. synthetic
 
-**All hazard/nowcast data (hail, downburst, cloudburst, lightning, radar, satellite) is
-synthetic.** No MOSDAC or IMD nowcast API credentials have been granted yet (registration
+**Hazard/satellite/radar data (hail, downburst, cloudburst, satellite, radar) is still
+synthetic.** No MOSDAC or IMD *nowcast API* credentials have been granted yet (registration
 is the single longest-lead-time item and hasn't been completed by the team) — see
 `README.md` for exact next steps. Every ingestion module (`nowcast/ingestion/*.py`) is
-written with a `_fetch_live()` stub matching the documented real API/schema, and a
-clearly-labeled mock generator as the current active path (`USE_LIVE_IMD` /
-`USE_LIVE_SATELLITE` / `USE_LIVE_RADAR` env flags, all default `false`).
+written with a `_fetch_live()`/live-fetch stub matching the documented real API/schema, and
+a clearly-labeled mock generator as the fallback path.
+
+Two pieces of the pipeline now have real, opt-in live data instead, each behind a
+`USE_LIVE_*` flag in `.env` (see `.env.example`), each falling back to synthetic
+automatically on any fetch failure:
+
+- **IMD station feed** (`nowcast/ingestion/imd_nowcast.py`): real temperature/humidity/
+  wind/precip via Tomorrow.io's realtime weather API (`USE_LIVE_IMD=true` +
+  `TOMORROW_API_KEY`). Tomorrow.io has no lightning field, so lightning/hail categories stay
+  synthetic even with this on.
+- **Weather-variable grid** (`nowcast/processing/weather_fields.py`): real ECMWF Open Data
+  HRES forecast (`USE_LIVE_ECMWF=true`, no API key needed — see
+  `nowcast/ingestion/ecmwf_weather.py`). ECMWF's older key-based public-datasets service
+  (`api.ecmwf.int`) was mostly decommissioned in 2023; what remains (S2S, TIGGE) is
+  weeks-to-months scale and useless for nowcasting, so this uses their newer unauthenticated
+  Open Data service instead — real 0.25° HRES temperature/dewpoint/wind, updated 4x/day,
+  CC-BY-4.0 licensed (attribution: ECMWF).
 
 | Layer | Real source (planned) | Current source | Notes |
 |---|---|---|---|
-| Lightning/thunderstorm/hail flags | IMD nowcast API (district/station JSON) | Synthetic, weighted by distance to a fake storm cell | Schema matches the real feed exactly |
+| Lightning/thunderstorm/hail flags | IMD nowcast API (district/station JSON) | Synthetic, weighted by distance to a fake storm cell | Schema matches the real feed exactly; temp/humidity/wind at stations can be real via Tomorrow.io (`USE_LIVE_IMD`) |
+| Weather-variable grid (temp/humidity/wind overlays) | ECMWF Open Data HRES | **Real when `USE_LIVE_ECMWF=true`**, else synthetic climatology+storm perturbation | No API key needed; falls back to synthetic on any failure |
 | Satellite IR/WV/MWIR | INSAT-3D/3DR via MOSDAC (`mdapi.py`) | Synthetic Gaussian cold-cloud-top field | Same storm, correlated cold top |
 | Radar reflectivity + velocity | MOSDAC volumetric DWR (TERLS/SHAR) via `pyiwr`/Py-ART | Synthetic moving Gaussian cell + velocity couplet | No PNG-inversion shortcut taken |
 
@@ -64,8 +80,10 @@ fixed) so the demo reads as one coherent storm, not disconnected synthetic layer
 
 ## Known limitations
 
-- No real Indian data anywhere in the pipeline yet — MOSDAC/IMD access is unstarted.
-  Every number on the dashboard is fabricated for demo purposes.
+- No real Indian government data (MOSDAC/IMD) in the pipeline yet — that access is
+  unstarted. Two non-Indian real sources (Tomorrow.io, ECMWF Open Data) are wired in as
+  opt-in live paths for the station feed and weather grid respectively; hazard/satellite/
+  radar remain fully synthetic.
 - Downburst and hail rules have never been validated against a real event; thresholds
   are physically motivated (standard meteorological literature values) but unverified.
 - The demo storm is a single idealized Gaussian cell with constant velocity — real

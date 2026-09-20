@@ -79,6 +79,7 @@ export interface WeatherLayer {
 export interface WeatherLayersResponse {
   layers: WeatherLayer[];
   note: string;
+  source: "ecmwf-opendata" | "synthetic";
 }
 
 export interface WindPoint {

@@ -30,6 +30,13 @@ USE_LIVE_IMD = os.getenv("USE_LIVE_IMD", "false").lower() == "true"
 IMD_API_KEY = os.getenv("IMD_API_KEY", "")
 TOMORROW_API_KEY = os.getenv("TOMORROW_API_KEY", "")
 
+# ECMWF Open Data (temperature/humidity/wind grid) — genuinely free, no API
+# key needed (their older key-based public-datasets service was mostly
+# decommissioned in 2023; see nowcast/ingestion/ecmwf_weather.py). Still
+# opt-in like the other USE_LIVE_* flags: it makes real network calls on
+# every distinct forecast step requested, so it's not on by default.
+USE_LIVE_ECMWF = os.getenv("USE_LIVE_ECMWF", "false").lower() == "true"
+
 # Hazard thresholds (section 4c of project.md) — documented here, not buried.
 HAIL_LIGHTNING_CAT_MIN = "cat17"       # IMD hail flag category
 CLOUDBURST_RAIN_RATE_MM_HR = 15.0      # IMD "very heavy rain" threshold

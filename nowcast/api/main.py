@@ -334,8 +334,10 @@ def raw_layers():
 def weather_layers():
     """Temperature/humidity/wind-speed as colored map overlays across the
     wide demo region (§WIDE_BBOX) — not just the narrow storm bbox used for
-    radar/satellite/hazards. Synthetic (see processing/weather_fields.py),
-    but spatially coherent with the storm's position."""
+    radar/satellite/hazards. Real ECMWF Open Data when USE_LIVE_ECMWF=true,
+    otherwise synthetic (see processing/weather_fields.py) — the response
+    always reports which one actually happened, since a live fetch failure
+    silently falls back to synthetic."""
     g = weather_fields.generate_grid()
     layers = [
         {
@@ -363,7 +365,13 @@ def weather_layers():
             "image": _array_to_png_data_url(g["wind_speed_ms"], "plasma", vmin=0, vmax=18),
         },
     ]
-    return {"layers": layers, "note": "synthetic ambient fields — not an IMD/MOSDAC product"}
+    source = g.get("source", "synthetic")
+    note = (
+        "real ECMWF Open Data (HRES, CC-BY-4.0) — see nowcast/ingestion/ecmwf_weather.py"
+        if source == "ecmwf-opendata"
+        else "synthetic ambient fields — not an IMD/MOSDAC/ECMWF product"
+    )
+    return {"layers": layers, "note": note, "source": source}
 
 
 @app.get("/wind-vectors")
@@ -376,9 +384,11 @@ def wind_vectors():
 def region_forecast(lat: float, lon: float, lead_time: int = Query(0, ge=0, le=360)):
     """Point-sampled future trend for a user-selected region (temperature/
     humidity/wind at a chosen lead time) — backs the dashboard's per-region
-    time-scale panel. Entirely synthetic (see weather_fields.py); if the
-    point falls inside the storm bbox, also includes the pySTEPS cloudburst
-    rain-rate forecast at the nearest lead step for that location."""
+    time-scale panel. Real ECMWF Open Data when USE_LIVE_ECMWF=true (the
+    lead-time rounds to ECMWF's nearest 3h forecast step), otherwise
+    synthetic (see weather_fields.py). If the point falls inside the storm
+    bbox, also includes the pySTEPS cloudburst rain-rate forecast (always
+    synthetic input) at the nearest lead step for that location."""
     sample = weather_fields.sample_point(lat, lon, lead_time)
 
     cloudburst_rainrate = None

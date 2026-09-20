@@ -19,6 +19,7 @@ export function LayersDrawer({
   activeVar,
   onVarChange,
   activeVarMeta,
+  weatherSource,
 }: {
   onClose: () => void;
   model: ModelId;
@@ -33,6 +34,7 @@ export function LayersDrawer({
   activeVar: VarId;
   onVarChange: (v: VarId) => void;
   activeVarMeta: WeatherLayer | null;
+  weatherSource: "ecmwf-opendata" | "synthetic" | null;
 }) {
   const stops = activeVar !== "none" ? VAR_COLOR_STOPS[activeVar] : null;
 
@@ -97,8 +99,17 @@ export function LayersDrawer({
           </>
         )}
         <div className="note-text">
-          <span className="synthetic-badge">SYNTHETIC</span>
-          Ambient field, not an IMD/MOSDAC product — smooth climatology + storm perturbation.
+          {weatherSource === "ecmwf-opendata" ? (
+            <>
+              <span className="real-badge">REAL</span>
+              ECMWF Open Data (HRES forecast, CC-BY-4.0) — no API key needed.
+            </>
+          ) : (
+            <>
+              <span className="synthetic-badge">SYNTHETIC</span>
+              Ambient field, not an IMD/MOSDAC/ECMWF product — smooth climatology + storm perturbation.
+            </>
+          )}
         </div>
       </div>
 
