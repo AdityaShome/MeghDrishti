@@ -58,7 +58,7 @@ function Dashboard() {
   const [satelliteVisible, setSatelliteVisible] = useState(false);
   const [radarVisible, setRadarVisible] = useState(true);
   const [heatmapsVisible, setHeatmapsVisible] = useState(true);
-  const [stationsVisible, setStationsVisible] = useState(true);
+  const [lightningVisible, setLightningVisible] = useState(true);
   const [modelFrameVisible, setModelFrameVisible] = useState(false);
   const [activeVar, setActiveVar] = useState<VarId>("none");
   const [baseMapId, setBaseMapId] = useState("none");
@@ -278,7 +278,7 @@ function Dashboard() {
             <MapLayers
               hazards={hazards.data ?? null}
               heatmapsVisible={heatmapsVisible}
-              stationsVisible={stationsVisible}
+              lightningVisible={lightningVisible}
               rawLayers={rawLayers.data?.layers ?? null}
               satelliteVisible={satelliteVisible}
               radarVisible={radarVisible}
@@ -323,8 +323,8 @@ function Dashboard() {
                 <button className={`layer-btn ${satelliteVisible ? "active" : ""}`} onClick={() => setSatelliteVisible((v) => !v)}>
                   <div className={`status-dot ${satelliteVisible ? "ok" : ""}`} /> Satellite (IR)
                 </button>
-                <button className={`layer-btn ${stationsVisible ? "active" : ""}`} onClick={() => setStationsVisible((v) => !v)}>
-                  <div className={`status-dot ${stationsVisible ? "ok" : ""}`} /> Lightning
+                <button className={`layer-btn ${lightningVisible ? "active" : ""}`} onClick={() => setLightningVisible((v) => !v)}>
+                  <div className={`status-dot ${lightningVisible ? "ok" : ""}`} /> Lightning
                 </button>
                 <button className={`layer-btn ${heatmapsVisible ? "active" : ""}`} onClick={() => setHeatmapsVisible((v) => !v)}>
                   <div className={`status-dot ${heatmapsVisible ? "ok" : ""}`} /> Hazards
@@ -456,7 +456,7 @@ function Dashboard() {
 function MapLayers(props: {
   hazards: HazardsResponse | null;
   heatmapsVisible: boolean;
-  stationsVisible: boolean;
+  lightningVisible: boolean;
   rawLayers: RawLayer[] | null;
   satelliteVisible: boolean;
   radarVisible: boolean;
@@ -476,7 +476,7 @@ function MapLayers(props: {
   return (
     <>
       <WmsBaseLayer selectedId={props.baseMapId} />
-      <HazardLayers hazards={props.hazards} heatmapsVisible={props.heatmapsVisible} stationsVisible={props.stationsVisible} />
+      <HazardLayers hazards={props.hazards} hailVisible={props.heatmapsVisible} lightningVisible={props.lightningVisible} />
       <WmsOverlayLayers activeIds={props.activeOverlayIds} />
       <SensorRasterLayers layers={props.rawLayers} satelliteVisible={props.satelliteVisible} radarVisible={props.radarVisible} />
       <WeatherRasterLayers layers={props.weatherLayers} activeVar={props.activeVar} />

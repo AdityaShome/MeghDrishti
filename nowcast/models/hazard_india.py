@@ -91,7 +91,7 @@ def advect_point(lat, lon, lead_minutes):
 
 
 FILLER_TARGET_TOTAL = 20  # always show roughly this many points on the map
-_FILLER_TYPE_WEIGHTS = [("hail", 0.7), ("lightning", 0.3)]
+_FILLER_TYPE_WEIGHTS = [("hail", 0.5), ("lightning", 0.5)]
 _FILLER_SEVERITY_WEIGHTS = [("low", 0.4), ("moderate", 0.35), ("high", 0.25)]
 _FILLER_DBZ_RANGE = {"low": (56, 64), "moderate": (65, 77), "high": (78, 92)}
 

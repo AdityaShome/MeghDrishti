@@ -3,7 +3,7 @@ import { Marker, Popup, type GeoJSONSource } from "maplibre-gl";
 import type { Point } from "geojson";
 import { useMeghMap } from "../MapProvider";
 import { colorForHazards, SEVERITY_COLOR } from "../../lib/colors";
-import type { HazardsResponse, HazardFeature, Hazard } from "../../types";
+import type { HazardsResponse, HazardFeature, Hazard, HazardType } from "../../types";
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] as HazardFeature[] };
 
@@ -41,20 +41,25 @@ function buildMarkerElement(severity: string): HTMLDivElement {
   return el;
 }
 
+/** Two independent toggles from the top toolbar apply here: `hailVisible`
+ * (the "Hazards" button) hides/shows hail markers, `lightningVisible` (the
+ * "Lightning" button) hides/shows lightning markers — each marker's own
+ * type decides which toggle it listens to, so turning one off doesn't
+ * touch the other. */
 export function HazardLayers({
   hazards,
-  heatmapsVisible = true,
-  stationsVisible = true,
+  hailVisible = true,
+  lightningVisible = true,
 }: {
   hazards: HazardsResponse | null;
-  heatmapsVisible?: boolean;
-  stationsVisible?: boolean;
+  hailVisible?: boolean;
+  lightningVisible?: boolean;
 }) {
   const { map, ready } = useMeghMap();
   const popupRef = useRef<Popup | null>(null);
-  const markersRef = useRef<Marker[]>([]);
-  const visibleRef = useRef(heatmapsVisible);
-  visibleRef.current = heatmapsVisible;
+  const markersRef = useRef<{ marker: Marker; type: HazardType }[]>([]);
+  const visibleByType = useRef<Record<string, boolean>>({ hail: hailVisible, lightning: lightningVisible });
+  visibleByType.current = { hail: hailVisible, lightning: lightningVisible, downburst: hailVisible, cloudburst: hailVisible };
 
   useEffect(() => {
     if (!map || !ready) return;
@@ -102,7 +107,7 @@ export function HazardLayers({
   useEffect(() => {
     if (!map || !ready || !hazards) return;
 
-    for (const m of markersRef.current) m.remove();
+    for (const { marker } of markersRef.current) marker.remove();
     markersRef.current = [];
 
     const stationFeatures: HazardFeature[] = [];
@@ -124,7 +129,7 @@ export function HazardLayers({
       const [lon, lat] = f.geometry.coordinates;
       for (const h of f.properties.hazards) {
         const el = buildMarkerElement(h.severity);
-        el.style.display = visibleRef.current ? "" : "none";
+        el.style.display = visibleByType.current[h.type] ? "" : "none";
         el.addEventListener("click", (ev) => {
           ev.stopPropagation();
           const detail = hazardDetail(h);
@@ -139,7 +144,7 @@ export function HazardLayers({
             .addTo(map);
         });
         const marker = new Marker({ element: el }).setLngLat([lon, lat]).addTo(map);
-        markersRef.current.push(marker);
+        markersRef.current.push({ marker, type: h.type });
       }
     }
 
@@ -147,21 +152,14 @@ export function HazardLayers({
   }, [map, ready, hazards]);
 
   useEffect(() => {
-    for (const m of markersRef.current) {
-      m.getElement().style.display = heatmapsVisible ? "" : "none";
+    for (const { marker, type } of markersRef.current) {
+      marker.getElement().style.display = visibleByType.current[type] ? "" : "none";
     }
-  }, [heatmapsVisible]);
-
-  useEffect(() => {
-    if (!map) return;
-    for (const id of ["station-glow", "station-dot"]) {
-      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", stationsVisible ? "visible" : "none");
-    }
-  }, [map, stationsVisible]);
+  }, [hailVisible, lightningVisible]);
 
   useEffect(() => {
     return () => {
-      for (const m of markersRef.current) m.remove();
+      for (const { marker } of markersRef.current) marker.remove();
     };
   }, []);
 
