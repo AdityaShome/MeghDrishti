@@ -84,25 +84,14 @@ function Dashboard() {
   const rawLayers = useRawLayers();
   const forecastSummary = useForecastSummary(model);
   const nowcastFrame = useNowcastFrame(model, leadMinutes, modelFrameVisible);
-  const weatherLayers = useWeatherLayers(leadMinutes, activeVar !== "none" && activeVar !== "rainfall");
+  // Rainfall is now a normal /weather-layers entry (real, all-India, from
+  // live radar via Z-R — see main.py) like temp/humidity/wind/pressure,
+  // not a special case reusing the per-region pySTEPS frame — that used to
+  // make "Rainfall" the one weather variable still secretly scoped to
+  // whichever demo city was active.
+  const weatherLayers = useWeatherLayers(leadMinutes, activeVar !== "none");
   const windVectors = useWindVectors(leadMinutes, activeVar === "wind_speed");
-  // Rainfall reuses the pySTEPS rain-rate frame (already computed for the
-  // model-comparison toggle) as a regular weather-variable option instead of
-  // a separate endpoint — same real mm/hr data, same 0-6h lead-time slider.
-  const rainfallFrame = useNowcastFrame("pysteps", leadMinutes, activeVar === "rainfall");
-  const rainfallLayer: WeatherLayer | null =
-    rainfallFrame.data?.available && rainfallFrame.data.image && rainfallFrame.data.bbox
-      ? {
-          id: "rainfall",
-          label: "Rain rate (pySTEPS)",
-          unit: "mm/hr",
-          bbox: rainfallFrame.data.bbox,
-          vmin: 0,
-          vmax: 65,
-          image: rainfallFrame.data.image,
-        }
-      : null;
-  const displayedWeatherLayers = [...(weatherLayers.data?.layers ?? []), ...(rainfallLayer ? [rainfallLayer] : [])];
+  const displayedWeatherLayers = weatherLayers.data?.layers ?? [];
 
   useEffect(() => {
     setApiUnreachable(Boolean(hazards.error && hazards.error.includes("Failed to fetch")));

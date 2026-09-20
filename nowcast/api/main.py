@@ -599,6 +599,34 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
             "image": _array_to_png_data_url(g["pressure_hpa"], "coolwarm", vmin=995, vmax=1015),
         },
     ]
+
+    # Rainfall: real, all-India, derived from the same cached RainViewer
+    # reflectivity /hazards' hail detection uses (see hazard_india.py) via
+    # the standard Marshall-Palmer Z-R relation (Z=200R^1.6) — a genuine
+    # current rain-rate estimate, not a pySTEPS forecast, since there's no
+    # real all-India forecast mechanism (no persisted real radar time
+    # series for pySTEPS to extrapolate from). This replaced an earlier
+    # version of this layer that silently used the per-region pySTEPS
+    # frame, which meant "Rainfall" was the one weather variable still
+    # secretly scoped to whichever demo city was active.
+    import numpy as np
+    from nowcast.configs.settings import INDIA_BBOX
+
+    with _lock:
+        india_reflectivity = _india_hazards_cache["reflectivity"]
+    if india_reflectivity is not None:
+        rainrate = np.power(np.power(10, india_reflectivity / 10) / 200, 1 / 1.6)
+        layers.append(
+            {
+                "id": "rainfall",
+                "label": "Rain rate (from real radar)",
+                "unit": "mm/hr",
+                "bbox": INDIA_BBOX,
+                "vmin": 0, "vmax": 65,
+                "image": _array_to_png_data_url(rainrate, "turbo", vmin=0, vmax=65),
+            }
+        )
+
     source = g.get("source", "synthetic")
     note = (
         "real ECMWF Open Data (HRES, CC-BY-4.0) — see nowcast/ingestion/ecmwf_weather.py"
