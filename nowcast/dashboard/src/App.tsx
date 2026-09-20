@@ -371,42 +371,38 @@ function Dashboard() {
             </div>
 
             <div className="map-legends">
-              <div className="panel-section" style={{ background: "var(--panel)", borderRadius: "12px", border: "1px solid var(--panel-border)" }}>
-                <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "8px", fontWeight: 600 }}>Radar Reflectivity (dBZ)</div>
+              <div className="panel-section" style={{ padding: "10px 12px", background: "var(--panel)", borderRadius: "10px", border: "1px solid var(--panel-border)" }}>
+                <div style={{ fontSize: "10px", color: "var(--text-dim)", marginBottom: "6px", fontWeight: 600 }}>Radar Reflectivity (dBZ)</div>
                 <div
                   style={{
-                    height: "8px",
+                    height: "6px",
                     background: "linear-gradient(90deg, #102e85, #1461c2, #1bb55e, #c0da27, #f7981b, #eb1b1e, #d715d0)",
-                    borderRadius: "4px",
+                    borderRadius: "3px",
                   }}
                 />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", marginTop: "4px", color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", marginTop: "3px", color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace" }}>
                   <span>10</span>
-                  <span>20</span>
                   <span>30</span>
-                  <span>40</span>
                   <span>50</span>
-                  <span>60</span>
                   <span>70</span>
                 </div>
               </div>
 
-              <div className="panel-section" style={{ background: "var(--panel)", borderRadius: "12px", border: "1px solid var(--panel-border)" }}>
-                <div style={{ fontSize: "11px", color: "var(--text-dim)", marginBottom: "8px", fontWeight: 600 }}>Hazard Severity</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
-                    <div style={{ width: 10, height: 10, background: "#ef4444", border: "1px solid #fff", borderRadius: "50%" }} /> High
+              <div className="panel-section" style={{ padding: "10px 12px", background: "var(--panel)", borderRadius: "10px", border: "1px solid var(--panel-border)" }}>
+                <div style={{ fontSize: "10px", color: "var(--text-dim)", marginBottom: "6px", fontWeight: 600 }}>Hazard Severity</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "9.5px", fontWeight: 500 }}>
+                    <div style={{ width: 8, height: 8, background: "#ef4444", border: "1px solid #fff", borderRadius: "50%", flex: "none" }} /> High
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
-                    <div style={{ width: 10, height: 10, background: "#f0b429", border: "1px solid #fff", borderRadius: "50%" }} /> Moderate
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "9.5px", fontWeight: 500 }}>
+                    <div style={{ width: 8, height: 8, background: "#f0b429", border: "1px solid #fff", borderRadius: "50%", flex: "none" }} /> Moderate
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", fontWeight: 500 }}>
-                    <div style={{ width: 10, height: 10, background: "#22c55e", border: "1px solid #fff", borderRadius: "50%" }} /> Low
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "9.5px", fontWeight: 500 }}>
+                    <div style={{ width: 8, height: 8, background: "#22c55e", border: "1px solid #fff", borderRadius: "50%", flex: "none" }} /> Low
                   </div>
                 </div>
-                <div style={{ fontSize: 9.5, color: "var(--text-faint)", marginTop: 8, lineHeight: 1.4 }}>
-                  Real hail (RainViewer) + lightning (Blitzortung), all of India. Drag the lead-time slider to see
-                  points advected by real wind (not a re-detected forecast).
+                <div style={{ fontSize: 8.5, color: "var(--text-faint)", marginTop: 6, lineHeight: 1.3 }}>
+                  Real hail + lightning, all India.
                 </div>
               </div>
             </div>

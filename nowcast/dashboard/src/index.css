@@ -216,8 +216,8 @@ button { font-family: inherit; }
 }
 
 .map-legends {
-  position: absolute; top: 70px; right: 16px;
-  display: flex; flex-direction: column; gap: 12px; pointer-events: none; z-index: 5;
+  position: absolute; top: 70px; right: 16px; width: 168px;
+  display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 5;
 }
 .map-legends > * { pointer-events: auto; }
 
