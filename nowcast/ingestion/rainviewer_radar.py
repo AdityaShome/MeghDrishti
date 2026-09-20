@@ -96,8 +96,17 @@ def fetch_reflectivity(grid_size=64):
         col0 = (tx - tx0) * TILE_SIZE
         mosaic[row0 : row0 + TILE_SIZE, col0 : col0 + TILE_SIZE] = dbz
 
-    mosaic_lon_min, mosaic_lat_min, _, _ = _tile_bounds(tx0, ty0, ZOOM)
-    _, _, mosaic_lon_max, mosaic_lat_max = _tile_bounds(max(tx_range), max(ty_range), ZOOM)
+    # _tile_bounds returns (lon_left, lat_bottom, lon_right, lat_top) for ONE
+    # tile. With multiple tile rows/columns, the overall mosaic bounds come
+    # from different corners than a naive same-tile read: the NW tile
+    # (tx0, ty0) gives the west edge AND the north edge (its OWN lat_bottom
+    # is just the bottom of the top row, not the mosaic's south edge); the SE
+    # tile gives the east edge AND the south edge. Mixing these up (taking
+    # lat_bottom from the NW tile) silently produced a degenerate or reversed
+    # latitude array whenever a region's bbox spanned >1 tile row — Kolkata's
+    # bbox does, Pune's happened not to, which is why this only surfaced now.
+    mosaic_lon_min, _, _, mosaic_lat_max = _tile_bounds(tx0, ty0, ZOOM)
+    _, mosaic_lat_min, mosaic_lon_max, _ = _tile_bounds(max(tx_range), max(ty_range), ZOOM)
 
     src_lons = np.linspace(mosaic_lon_min, mosaic_lon_max, mosaic.shape[1])
     src_lats = np.linspace(mosaic_lat_max, mosaic_lat_min, mosaic.shape[0])  # row 0 = top = max lat
