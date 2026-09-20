@@ -1,17 +1,22 @@
 """INSAT-3D/3DR satellite puller (section 2b of project.md).
 
-Real path: mdapi.py client against MOSDAC, datasetId 3DIMG_L1B_STD or
-3DIMG_L1C_ASIA_MER, parsed with h5py/satpy, reprojected with pyresample.
-Not implemented — needs MOSDAC approval (section 1). `_fetch_live` is the
-swap-in point once that lands; fallback per the plan's fallback matrix is
-GOES-16/Himawari-8 IR/WV via Google Earth Engine, same interface.
+Original plan: mdapi.py client against MOSDAC, datasetId 3DIMG_L1B_STD or
+3DIMG_L1C_ASIA_MER, parsed with h5py/satpy, reprojected with pyresample —
+not implemented, still needs MOSDAC approval (section 1).
 
-USE_LIVE_SATELLITE=false (default): generates synthetic TIR-1 (10.8um),
-WV (6.7um), and MWIR fields correlated with the same storm cell as the
-synthetic radar (via storm_track), so a real convective signature is
-visible — cold cloud top and moist WV signal collocated with the
-reflectivity core, not independent noise. Writes to data/satellite/<ts>.npz
-with keys: tir1, wv, mwir (each GRID_SIZE x GRID_SIZE), bbox, timestamp.
+USE_LIVE_SATELLITE=true instead pulls real Sentinel-3 SLSTR thermal data
+via Copernicus Data Space Ecosystem (nowcast/ingestion/copernicus_satellite.py)
+for the `tir1` channel — needs a free CDSE account + OAuth2 client
+credentials (COPERNICUS_CLIENT_ID/SECRET in .env). `wv`/`mwir` stay
+synthetic even in live mode (SLSTR has no equivalent channels), and a
+polar-orbit revisit gap (no recent pass over the bbox) is a normal,
+expected failure that falls back to fully synthetic for that cycle — not
+a bug. Default (false): generates synthetic TIR-1 (10.8um), WV (6.7um),
+and MWIR fields correlated with the same storm cell as the synthetic radar
+(via storm_track), so a real convective signature is visible — cold cloud
+top and moist WV signal collocated with the reflectivity core, not
+independent noise. Writes to data/satellite/<ts>.npz with keys: tir1, wv,
+mwir (each GRID_SIZE x GRID_SIZE), bbox, timestamp.
 """
 import os
 import sys
@@ -20,13 +25,11 @@ from datetime import datetime, timezone
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from nowcast.configs.settings import get_region_bbox, DATA_DIR
+from nowcast.configs.settings import get_region_bbox, DATA_DIR, USE_LIVE_SATELLITE
 from nowcast.processing.storm_track import center_at
 from nowcast.processing.synthetic_radar import GRID_SIZE
 
 SATELLITE_DIR = os.path.join(DATA_DIR, "satellite")
-
-USE_LIVE_SATELLITE = os.getenv("USE_LIVE_SATELLITE", "false").lower() == "true"
 
 # Ambient (clear-sky) brightness temps and convective cold-top minimum, Kelvin.
 _TIR1_AMBIENT_K = 298.0
@@ -44,7 +47,14 @@ def _grid_coords():
 
 
 def _fetch_live():
-    raise NotImplementedError("Set USE_LIVE_SATELLITE=true only after implementing mdapi.py ingestion")
+    from nowcast.ingestion.copernicus_satellite import fetch_tir1_grid
+
+    tir1 = fetch_tir1_grid(get_region_bbox(), GRID_SIZE)
+    # wv/mwir have no real Sentinel-3 SLSTR equivalent — reuse the synthetic
+    # mock for just those two channels rather than leaving them blank, so
+    # the fusion grid still has all three channels populated.
+    _, wv, mwir = _fetch_mock()
+    return tir1, wv, mwir
 
 
 def _fetch_mock(t_min=0):

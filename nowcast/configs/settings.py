@@ -115,6 +115,17 @@ USE_LIVE_RADAR = os.getenv("USE_LIVE_RADAR", "false").lower() == "true"
 # See nowcast/ingestion/blitzortung_lightning.py.
 USE_LIVE_LIGHTNING = os.getenv("USE_LIVE_LIGHTNING", "false").lower() == "true"
 
+# Copernicus Data Space Ecosystem (Sentinel-3 SLSTR F1 thermal band) — real
+# satellite brightness temperature, the one hazard input with no other free
+# live source. Needs a free CDSE account + OAuth2 client credentials (client
+# ID/secret from your account's API credentials page, NOT your login
+# password) — see nowcast/ingestion/copernicus_satellite.py for the caveats
+# (polar-orbit revisit gap, F1 is a thermal/fire channel not literally
+# INSAT's TIR1, wv/mwir stay synthetic even when this succeeds).
+USE_LIVE_SATELLITE = os.getenv("USE_LIVE_SATELLITE", "false").lower() == "true"
+COPERNICUS_CLIENT_ID = os.getenv("COPERNICUS_CLIENT_ID", "")
+COPERNICUS_CLIENT_SECRET = os.getenv("COPERNICUS_CLIENT_SECRET", "")
+
 # Hazard thresholds (section 4c of project.md) — documented here, not buried.
 HAIL_LIGHTNING_CAT_MIN = "cat17"       # IMD hail flag category
 CLOUDBURST_RAIN_RATE_MM_HR = 15.0      # IMD "very heavy rain" threshold

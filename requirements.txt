@@ -16,3 +16,4 @@ cfgrib
 eccodes
 xarray
 paho-mqtt
+tifffile

@@ -44,13 +44,21 @@ automatically on any fetch failure:
   `USE_LIVE_IMD`, applies on top of whichever station-data source is active. Each ingestion
   cycle listens for strikes in a short (~6s) window, so it under-samples relative to a
   persistent connection — zero strikes nearby is a normal, honest result, not a bug.
+- **Satellite** (`nowcast/ingestion/satellite_insat.py` + `copernicus_satellite.py`):
+  real Sentinel-3 SLSTR F1 thermal band for `tir1` via Copernicus Data Space Ecosystem
+  (`USE_LIVE_SATELLITE=true`), needs a free CDSE account + OAuth2 client credentials
+  (`COPERNICUS_CLIENT_ID`/`COPERNICUS_CLIENT_SECRET`). Two disclosed limitations: SLSTR has
+  no water-vapor or mid-wave-IR channel, so `wv`/`mwir` stay synthetic even when this
+  succeeds; and Sentinel-3 is polar-orbiting (~1-2 passes/day per point), not geostationary,
+  so "no recent scene over this bbox" is an expected, frequent fallback to synthetic, not a
+  bug. **Written but not live-tested** — no CDSE account has been registered yet.
 
 | Layer | Real source (planned) | Current source | Notes |
 |---|---|---|---|
 | Lightning | IMD nowcast API (district/station JSON) | **Real via Blitzortung.org when `USE_LIVE_LIGHTNING=true`**, else synthetic proximity-to-fake-storm | Free community VLF network, no API key |
 | Temp/humidity/wind at stations | IMD nowcast API | **Real via Tomorrow.io when `USE_LIVE_IMD=true`**, else synthetic | No lightning field, hence the separate Blitzortung path above |
 | Weather-variable grid (temp/humidity/wind overlays) | ECMWF Open Data HRES | **Real when `USE_LIVE_ECMWF=true`**, else synthetic climatology+storm perturbation | No API key needed; falls back to synthetic on any failure |
-| Satellite IR/WV/MWIR | INSAT-3D/3DR via MOSDAC (`mdapi.py`) | Synthetic Gaussian cold-cloud-top field | No free replacement integrated yet; EUMETSAT Meteosat-9 IODC is a candidate (needs account signup) |
+| Satellite tir1 | INSAT-3D/3DR via MOSDAC (`mdapi.py`) | **Real via Copernicus Sentinel-3 SLSTR when `USE_LIVE_SATELLITE=true`**, else synthetic | Needs free CDSE account; wv/mwir stay synthetic regardless; untested live |
 | Radar reflectivity | MOSDAC volumetric DWR (TERLS/SHAR) via `pyiwr`/Py-ART | **Real via RainViewer when `USE_LIVE_RADAR=true`**, else synthetic moving Gaussian cell | Genuine greyscale-to-dBZ decode, no API key |
 | Radar radial velocity (downburst) | MOSDAC volumetric DWR | Synthetic velocity couplet | No public source publishes raw Doppler scans |
 
@@ -98,12 +106,13 @@ fixed) so the demo reads as one coherent storm, not disconnected synthetic layer
 
 ## Known limitations
 
-- MOSDAC/IMD *nowcast API* access is still under review. Four non-MOSDAC real sources are
+- MOSDAC/IMD *nowcast API* access is still under review. Five non-MOSDAC real sources are
   wired in as opt-in live paths in the meantime: Tomorrow.io (station temp/humidity/wind),
   ECMWF Open Data (weather grid), RainViewer (radar reflectivity — itself IMD radar data,
-  just republished by a third party), and Blitzortung.org (real lightning strikes).
-  Satellite IR/WV/MWIR and radar radial velocity (for downburst) have no free replacement
-  integrated yet and remain fully synthetic.
+  just republished by a third party), Blitzortung.org (real lightning strikes), and
+  Copernicus Sentinel-3 SLSTR (satellite tir1 — written but not live-tested, no CDSE
+  account registered yet). Radar radial velocity (for downburst) has no free replacement
+  and remains fully synthetic; satellite wv/mwir stay synthetic even with Copernicus live.
 - Downburst and hail rules have never been validated against a real event; thresholds
   are physically motivated (standard meteorological literature values) but unverified.
 - The demo storm is a single idealized Gaussian cell with constant velocity — real

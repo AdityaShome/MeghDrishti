@@ -7,12 +7,11 @@ Full plan: [`project.md`](project.md). One-page write-up: [`WRITEUP.md`](WRITEUP
 ## Current status — Definition of Done (§8) satisfied
 
 MOSDAC/IMD *nowcast API* registration is still under review (see Next steps) — while
-waiting, several pieces have been replaced with **other free, real data sources** instead
-of staying synthetic. What's left fully synthetic: satellite IR/WV/MWIR (no public
-alternative found yet) and hail's cold-cloud-top input, plus radar's Doppler velocity
-(needed for the downburst rule — no public aggregator publishes raw volumetric scans).
-Every real source below is opt-in via a `USE_LIVE_*` flag in `.env` (copy from
-`.env.example`) and falls back to synthetic automatically if the live fetch fails.
+waiting, every hazard input has been replaced with **another free, real data source**
+except radar's Doppler velocity (needed for the downburst rule — no public aggregator
+publishes raw volumetric scans, so downburst stays fully synthetic). Every real source
+below is opt-in via a `USE_LIVE_*` flag in `.env` (copy from `.env.example`) and falls
+back to synthetic automatically if the live fetch fails.
 
 - **Ingestion (2a/2b/2c)**: `nowcast/ingestion/{imd_nowcast,satellite_insat,radar_puller}.py`
   — `imd_nowcast.py` has a real live path via Tomorrow.io's realtime weather API
@@ -25,10 +24,13 @@ Every real source below is opt-in via a `USE_LIVE_*` flag in `.env` (copy from
   `nowcast/ingestion/rainviewer_radar.py`): its "Black and White" tile scheme is a direct
   greyscale-to-dBZ encoding, not a rendered color guess, and its India coverage is itself
   IMD's public radar network republished by a third party. Radial velocity (downburst)
-  stays synthetic even with radar live, since no public source exposes it. Satellite
-  (INSAT-like TIR1/WV/MWIR) is still fully synthetic — no replacement source integrated
-  yet. Each puller runs independently; one failing doesn't block the others
-  (`_ingest_all` in `api/main.py`).
+  stays synthetic even with radar live, since no public source exposes it. Satellite is
+  real via Copernicus Data Space Ecosystem (`USE_LIVE_SATELLITE=true`, needs a free CDSE
+  account + OAuth2 client credentials — see `nowcast/ingestion/copernicus_satellite.py`):
+  Sentinel-3 SLSTR's F1 thermal band for `tir1`, though `wv`/`mwir` stay synthetic (no
+  Sentinel-3 equivalent) and, being polar-orbiting rather than geostationary, frequent
+  "no recent scene" fallbacks to synthetic are expected, not a bug. Each puller runs
+  independently; one failing doesn't block the others (`_ingest_all` in `api/main.py`).
 - **Weather-variable grid**: `nowcast/processing/weather_fields.py` — real ECMWF Open Data
   (HRES forecast, 0.25°, updated 4x/day) via `nowcast/ingestion/ecmwf_weather.py` when
   `USE_LIVE_ECMWF=true`. Genuinely free, **no API key needed** — ECMWF's older key-based
@@ -79,7 +81,8 @@ Every real source below is opt-in via a `USE_LIVE_*` flag in `.env` (copy from
   HTML/JS version is kept at `nowcast/dashboard/legacy/index.html` for reference but is
   no longer maintained. Verified with a headless-browser pass (Playwright) — see below.
 
-Not built: real satellite access (no free alternative integrated yet), real Doppler
+Not built/not verified live: Copernicus satellite integration is written but untested
+against real credentials (no CDSE account registered yet — see Next steps), real Doppler
 velocity for downburst (no public source exists outside MOSDAC/IMD), SmaAt-UNet
 fine-tuning (the plan's Option B for 4b — DGMR zero-shot, Option A, was built instead).
 
@@ -125,11 +128,15 @@ errors. Two real bugs were caught this way and fixed:
 ## Next steps (in plan order)
 
 1. MOSDAC/IMD nowcast API registration is submitted and under review (project.md section
-   1) — once granted, swap `radar_puller.py`'s velocity and `satellite_insat.py` over to
-   real MOSDAC sources; everything else already has a real stand-in (see above).
-2. A real EUMETSAT Meteosat-9 (Indian Ocean Data Coverage) satellite IR feed is a
-   candidate replacement for the still-synthetic satellite channel — needs a free
-   EUMETSAT User Portal account + API key (`eumdac` client) that hasn't been set up yet.
+   1) — once granted, swap `radar_puller.py`'s velocity over to a real MOSDAC source;
+   everything else already has a real stand-in (see above).
+2. Register a free Copernicus Data Space Ecosystem account and create OAuth2 client
+   credentials, then set `COPERNICUS_CLIENT_ID`/`COPERNICUS_CLIENT_SECRET` in `.env` to
+   turn on real satellite data — the integration (`copernicus_satellite.py`) is written
+   but has never been exercised against a live response, since no account exists yet.
+   EUMETSAT Meteosat-9 (Indian Ocean Data Coverage) remains a candidate alternative —
+   geostationary and continuously updating, unlike Sentinel-3's polar orbit — if the
+   Copernicus integration doesn't pan out.
 3. Once real radar CAPPI grids or RainViewer's live feed have been observed against
    actual storms, downburst/hail thresholds should be re-validated — the current
    thresholds are textbook values, never checked against data.
