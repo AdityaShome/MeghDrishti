@@ -15,6 +15,7 @@ only updates every 6h, so there's no need to re-download per request).
 Downloads are global GRIB2 files (no server-side bbox filtering in this
 API) — a few MB each, subset locally to WIDE_BBOX after decoding.
 """
+import concurrent.futures
 import os
 import sys
 import tempfile
@@ -27,9 +28,18 @@ from ecmwf.opendata import Client
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from nowcast.configs.settings import WIDE_BBOX, WIDE_GRID_SIZE
 
-_CLIENT = Client(source="ecmwf")
+# The client's own defaults (maximum_retries=500, retry_after=120s) are
+# built for a long-running batch job, not a request that has to fail fast
+# and fall back to synthetic data — with those defaults, a single
+# transient hiccup (rate limiting, a network blip) can make a request
+# retry for hours with no way to tell it apart from "still downloading".
+# 3 retries with a much shorter backoff still tolerates real transient
+# failures without ever looking like a permanent hang.
+_CLIENT = Client(source="ecmwf", maximum_retries=3, retry_after=5)
 _CACHE = {}  # step (int hours) -> (fetched_at_epoch, grid_dict)
 _CACHE_TTL_SECONDS = 3 * 3600  # well under ECMWF's 6h update cadence
+_FETCH_TIMEOUT_SECONDS = 25  # the package sets no HTTP timeout of its own —
+# a real network hang (not just an error) would otherwise block forever
 
 
 def _nearest_step(lead_minutes):
@@ -117,15 +127,32 @@ def _fetch_and_process(step):
 
 def fetch_grid(lead_minutes=0):
     """Real ECMWF HRES grid for the nearest available forecast step.
-    Raises on any failure (network, decode, missing package) — callers
-    (weather_fields.py) catch this and fall back to the synthetic
-    generator, same pattern as every other live-data source in this repo.
+    Raises on any failure (network, decode, missing package, or a hard
+    timeout — see _FETCH_TIMEOUT_SECONDS) — callers (weather_fields.py)
+    catch this and fall back to the synthetic generator, same pattern as
+    every other live-data source in this repo.
     """
     step = _nearest_step(lead_minutes)
     cached = _CACHE.get(step)
     if cached and (time.time() - cached[0]) < _CACHE_TTL_SECONDS:
         return cached[1]
-    grid = _fetch_and_process(step)
+
+    # Deliberately not a `with` block: ThreadPoolExecutor.__exit__ calls
+    # shutdown(wait=True), which blocks until the worker thread finishes
+    # regardless of the timeout below — that would silently defeat the
+    # whole point of this wrapper. shutdown(wait=False) lets the caller give
+    # up on time without waiting for a hung thread to ever finish (Python
+    # can't forcibly kill a thread; the orphaned download just gets
+    # abandoned and eventually errors out or completes uselessly on its own).
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(_fetch_and_process, step)
+    try:
+        grid = future.result(timeout=_FETCH_TIMEOUT_SECONDS)
+    except concurrent.futures.TimeoutError:
+        pool.shutdown(wait=False)
+        raise RuntimeError(f"ECMWF fetch exceeded {_FETCH_TIMEOUT_SECONDS}s, giving up") from None
+    pool.shutdown(wait=False)
+
     _CACHE[step] = (time.time(), grid)
     return grid
 
