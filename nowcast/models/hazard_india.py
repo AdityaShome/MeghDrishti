@@ -36,13 +36,9 @@ just today's real detections moved along today's real wind. Documented
 explicitly rather than left implicit, since it's a real/synthetic
 distinction worth being honest about.
 
-Real detections are always topped up with extra synthetic filler points
-(see FILLER_TARGET_TOTAL / _generate_filler_hazards) so the map looks
-reasonably populated even when real activity is genuinely sparse — an
-explicit product choice, not an attempt to pass synthetic data off as
-real. Each point carries a `source` field ("real" or "synthetic") in the
-data even though the UI itself doesn't render it anywhere, per the
-project's standing "no real/synthetic badges in the UI" instruction.
+Output is real hail + lightning only — no synthetic filler points. The
+map may legitimately show few or zero points when India has little active
+convection; that's the true state, not something to paper over.
 """
 import os
 import sys
@@ -88,43 +84,6 @@ def advect_point(lat, lon, lead_minutes):
     dlat = (distance_km * np.cos(to_rad)) / km_lat
     dlon = (distance_km * np.sin(to_rad)) / km_lon
     return lat + dlat, lon + dlon
-
-
-FILLER_TARGET_TOTAL = 20  # always show roughly this many points on the map
-_FILLER_TYPE_WEIGHTS = [("hail", 0.5), ("lightning", 0.5)]
-_FILLER_SEVERITY_WEIGHTS = [("low", 0.4), ("moderate", 0.35), ("high", 0.25)]
-_FILLER_DBZ_RANGE = {"low": (56, 64), "moderate": (65, 77), "high": (78, 92)}
-
-
-def _weighted_choice(rng, weights):
-    items, probs = zip(*weights)
-    return rng.choice(items, p=probs)
-
-
-def _generate_filler_hazards(count, rng=None):
-    """Extra scattered points blended in with real detections, always on,
-    so the map looks reasonably populated even when real hail/lightning
-    activity is genuinely sparse — which is often, since most of India
-    most of the time has no severe convection happening. Marked
-    source="synthetic" in the data (never shown in the UI, per the
-    standing no-synthetic/real-badges instruction) purely so it stays
-    honestly distinguishable in the API/code for anyone who goes looking,
-    same as every other real-vs-synthetic `source` field in this project."""
-    if count <= 0:
-        return []
-    rng = rng or np.random.default_rng()
-    lon_min, lat_min, lon_max, lat_max = INDIA_BBOX
-    out = []
-    for _ in range(count):
-        lat = float(rng.uniform(lat_min + 1, lat_max - 1))
-        lon = float(rng.uniform(lon_min + 1, lon_max - 1))
-        htype = str(_weighted_choice(rng, _FILLER_TYPE_WEIGHTS))
-        severity = str(_weighted_choice(rng, _FILLER_SEVERITY_WEIGHTS))
-        point = {"lat": lat, "lon": lon, "type": htype, "severity": severity, "source": "synthetic"}
-        if htype == "hail":
-            point["reflectivity_dbz"] = round(float(rng.uniform(*_FILLER_DBZ_RANGE[severity])), 1)
-        out.append(point)
-    return out
 
 
 def advect_hazards(hazards, lead_minutes):
@@ -182,6 +141,9 @@ def detect(reflectivity=None, strikes=None):
         # risk — always "high" (red), unlike hail's threshold-based tiers.
         hazards.append({"lat": s["lat"], "lon": s["lon"], "type": "lightning", "severity": "high"})
 
+    strike_lats = np.array([s["lat"] for s in strikes]) if strikes else None
+    strike_lons = np.array([s["lon"] for s in strikes]) if strikes else None
+
     ys, xs = np.where(reflectivity >= HAIL_REFLECTIVITY_MIN_DBZ)
     for y, x in zip(ys.tolist(), xs.tolist()):
         cell_lat, cell_lon = float(lat_grid[y, x]), float(lon_grid[y, x])
@@ -194,8 +156,8 @@ def detect(reflectivity=None, strikes=None):
             severity = "low"
         if strikes:
             km_lat, km_lon = _km_per_deg(cell_lat)
-            nearest_km = min(
-                np.hypot((cell_lat - s["lat"]) * km_lat, (cell_lon - s["lon"]) * km_lon) for s in strikes
+            nearest_km = np.min(
+                np.hypot((cell_lat - strike_lats) * km_lat, (cell_lon - strike_lons) * km_lon)
             )
             if nearest_km <= LIGHTNING_PROXIMITY_KM:
                 severity = _bump_severity(severity)
@@ -211,7 +173,6 @@ def detect(reflectivity=None, strikes=None):
 
     for h in hazards:
         h["source"] = "real"
-    hazards.extend(_generate_filler_hazards(FILLER_TARGET_TOTAL - len(hazards)))
 
     return hazards
 
