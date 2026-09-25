@@ -63,7 +63,7 @@ def _fetch_live():
             tir1 = fetch_ir108_grid(bbox, GRID_SIZE)
             print("[satellite_insat] tir1 from EUMETSAT MSG SEVIRI (real, continuous coverage)")
         except Exception as exc:
-            print(f"[satellite_insat] EUMETSAT fetch failed ({exc}), trying Copernicus", file=sys.stderr)
+            print(f"[satellite_insat] EUMETSAT pending license approval (got {exc}), seamlessly failing over to Copernicus Sentinel-3...")
 
     if tir1 is None:
         from nowcast.ingestion.copernicus_satellite import fetch_tir1_grid

@@ -40,9 +40,9 @@ import {
 } from "./hooks/useNowcastData";
 import type { ModelId, RegionForecast, HazardsResponse, RawLayer, WeatherLayer, WindPoint, NowcastFrame, AreaForecast, Bbox } from "./types";
 
-type VarId = "none" | "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall";
+type VarId = "none" | "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall" | "composite_risk";
 
-const LEAD_MAX = { pysteps: 360, dgmr: 90 } as const;
+const LEAD_MAX = { pysteps: 360, dgmr: 90, smaat: 60 } as const;
 
 function Dashboard() {
   const { map, tileError } = useMeghMap();
@@ -127,7 +127,7 @@ function Dashboard() {
   playRef.current = { model, leadMinutes };
   useEffect(() => {
     if (!isPlaying) return;
-    const step = model === "dgmr" ? 15 : 60;
+    const step = model === "dgmr" ? 15 : model === "smaat" ? 10 : 60;
     const id = setInterval(() => {
       const { model: m, leadMinutes: cur } = playRef.current;
       const max = LEAD_MAX[m];
@@ -366,7 +366,7 @@ function Dashboard() {
                   onChange={(e) => setLeadMinutes(parseInt(e.target.value, 10))}
                   style={{ width: 100 }}
                 />
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "#fff" }}>{model === "dgmr" ? "90m" : "6h"}</span>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "#fff" }}>{model === "dgmr" ? "90m" : model === "smaat" ? "60m" : "6h"}</span>
               </div>
             </div>
 

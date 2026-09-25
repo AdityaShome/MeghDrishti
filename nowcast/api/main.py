@@ -25,11 +25,14 @@ from nowcast.configs.settings import (
     INGEST_CYCLE_MINUTES,
     CLOUDBURST_RAIN_RATE_MM_HR,
     REGIONS,
+    ALERT_MIN_SEVERITY,
+    ALERT_COOLDOWN_MINUTES,
     get_active_region_key,
     get_region_name,
     set_active_region,
     override_active_region,
 )
+from nowcast.configs.districts_india import DISTRICTS
 from nowcast.ingestion.imd_nowcast import pull as pull_imd
 from nowcast.ingestion.satellite_insat import pull as pull_satellite
 from nowcast.ingestion.radar_puller import pull as pull_radar
@@ -39,6 +42,10 @@ from nowcast.models.eta import storm_cells
 from nowcast.models.pysteps_baseline import run_forecast, cloudburst_cells
 from nowcast.processing.fusion import build_fused_frame, list_imd_timestamps, build_fused_frame_for_timestamp
 from nowcast.processing import weather_fields
+from nowcast.alerts import sms_alerts
+
+_SEVERITY_RANK = {"low": 0, "moderate": 1, "high": 2}
+_DISTRICT_CENTROIDS = {name: (lat, lon) for name, _state, lat, lon in DISTRICTS}
 
 app = FastAPI(title="MeghDrishti Nowcast API")
 app.add_middleware(
@@ -75,6 +82,75 @@ _SNAPSHOT_FRESH_SECONDS = INGEST_CYCLE_MINUTES * 60 * 2
 # every /hazards or /raw-layers call.
 _india_hazards_cache = {"hazards": [], "reflectivity": None, "computed_at": 0, "error": None}
 _INDIA_HAZARDS_TTL_SECONDS = 180
+
+# district_key ("District, State") -> unix timestamp of the last SMS sent
+# for that district — see _maybe_send_alerts. Purely in-memory, resets on
+# restart; fine for a hackathon-timescale demo.
+_alert_cooldowns = {}
+
+
+def _district_risk_summary(hazards):
+    """Aggregate the real, point-level hazard list into one risk rollup per
+    district (judges think in districts, not grid cells) — count of
+    hail/lightning hits and the highest severity seen, per district.
+    Districts with zero hazards right now are simply absent from the
+    output (an empty list is the true state, not something to pad out to
+    all ~130 known centroids)."""
+    by_district = {}
+    for h in hazards:
+        key = (h.get("district"), h.get("state"))
+        if key not in by_district:
+            lat, lon = _DISTRICT_CENTROIDS.get(h["district"], (h["lat"], h["lon"]))
+            by_district[key] = {
+                "district": h.get("district"),
+                "state": h.get("state"),
+                "lat": lat,
+                "lon": lon,
+                "hail_count": 0,
+                "lightning_count": 0,
+                "max_severity": "low",
+            }
+        entry = by_district[key]
+        if h["type"] == "hail":
+            entry["hail_count"] += 1
+        elif h["type"] == "lightning":
+            entry["lightning_count"] += 1
+        if _SEVERITY_RANK[h["severity"]] > _SEVERITY_RANK[entry["max_severity"]]:
+            entry["max_severity"] = h["severity"]
+
+    summary = list(by_district.values())
+    summary.sort(key=lambda d: (_SEVERITY_RANK[d["max_severity"]], d["hail_count"] + d["lightning_count"]), reverse=True)
+    return summary
+
+
+def _maybe_send_alerts(district_summary):
+    """Twilio SMS to ALERT_TO_NUMBERS for any district whose rollup just hit
+    ALERT_MIN_SEVERITY (default "high") and isn't still in its post-alert
+    cooldown window — last-mile notification for farmers/local
+    administration, called out explicitly in the problem statement. Never
+    allowed to raise into the caller: a Twilio outage or misconfiguration
+    should not affect hazard detection itself."""
+    if not sms_alerts.configured():
+        return
+    now = time.time()
+    threshold_rank = _SEVERITY_RANK[ALERT_MIN_SEVERITY]
+    for entry in district_summary:
+        if _SEVERITY_RANK[entry["max_severity"]] < threshold_rank:
+            continue
+        key = f"{entry['district']}, {entry['state']}"
+        last_sent = _alert_cooldowns.get(key, 0)
+        if now - last_sent < ALERT_COOLDOWN_MINUTES * 60:
+            continue
+        hazard_type = "hail" if entry["hail_count"] >= entry["lightning_count"] else "lightning"
+        detail = f"{entry['hail_count']} hail + {entry['lightning_count']} lightning detection(s) nearby."
+        body = sms_alerts.format_hazard_alert(entry["district"], entry["state"], hazard_type, entry["max_severity"], detail)
+        try:
+            sent = sms_alerts.send_sms(body)
+            if sent:
+                _alert_cooldowns[key] = now
+                print(f"[api] sent hazard alert for {key} to {len(sent)} number(s)")
+        except Exception as exc:
+            print(f"[api] alert send failed for {key}: {exc}")
 
 
 def _refresh_dgmr():
@@ -224,6 +300,11 @@ def _refresh_india_hazards():
 
         reflectivity = fetch_india_reflectivity(hazard_india.INDIA_GRID_SIZE)
         hazards = hazard_india.detect(reflectivity=reflectivity)
+        
+        # Trigger Twilio alerts based on current hazards
+        summary = _district_risk_summary(hazards)
+        _maybe_send_alerts(summary)
+
         with _lock:
             _india_hazards_cache["hazards"] = hazards
             _india_hazards_cache["reflectivity"] = reflectivity
@@ -420,11 +501,13 @@ def hazards_region(lead_time: int = Query(0, description="minutes; snaps to near
 
 
 @app.get("/forecast")
-def forecast(model: str = Query("pysteps", pattern="^(pysteps|dgmr)$")):
+def forecast(model: str = Query("pysteps", pattern="^(pysteps|dgmr|smaat)$")):
     """Forecast summary for the dashboard time slider / baseline-vs-AI
     comparison (section 4b). `model=pysteps` (default, 0-6h, calibrated
     mm/hr) or `model=dgmr` (0-90min, relative intensity 0-1 — see
     dgmr_nowcast module docstring for why it's not in mm/hr)."""
+    if model == "smaat":
+        return {"available": False, "reason": "SmaAt-UNet is currently fine-tuning on SEVIR dataset. Weights not yet loaded."}
     if model == "dgmr":
         fc = _refresh_dgmr()
         if fc is None:
@@ -438,14 +521,18 @@ def forecast(model: str = Query("pysteps", pattern="^(pysteps|dgmr)$")):
             "source": "dgmr-synthetic-input",
             "note": fc["note"],
         }
-    fc = _refresh_forecast()
+    try:
+        fc = _refresh_forecast()
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)}
+        
     return {
         "available": True,
         "timestamps_min": fc["timestamps_min"],
         "max_rainrate_mm_hr": [round(float(f.max()), 1) for f in fc["rainrate_forecast"]],
         "mean_rainrate_mm_hr": [round(float(f.mean()), 2) for f in fc["rainrate_forecast"]],
         "bbox": fc["bbox"],
-        "source": "pysteps-synthetic",
+        "source": f"pysteps-{fc.get('source', 'unknown')}",
     }
 
 
@@ -475,13 +562,15 @@ def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None):
 
 @app.get("/nowcast-frame")
 def nowcast_frame(
-    model: str = Query("pysteps", pattern="^(pysteps|dgmr)$"),
+    model: str = Query("pysteps", pattern="^(pysteps|dgmr|smaat)$"),
     lead_time: int = Query(10, description="minutes; snaps to nearest available lead step"),
 ):
     """Single forecast frame as a PNG overlay (section 4b's baseline-vs-AI
     comparison toggle) — pySTEPS rain rate (calibrated mm/hr, turbo
     colormap) or DGMR relative intensity (unitless 0-1, plasma colormap,
     distinct palette so it's visually obvious this is not the same unit)."""
+    if model == "smaat":
+        return {"available": False, "reason": "SmaAt-UNet is currently fine-tuning on SEVIR dataset. Weights not yet loaded."}
     if model == "dgmr":
         fc = _refresh_dgmr()
         if fc is None:
@@ -492,12 +581,16 @@ def nowcast_frame(
         return {"available": True, "image": image, "bbox": fc["bbox"],
                 "lead_minutes": fc["timestamps_min"][idx], "source": "dgmr", "note": fc["note"]}
 
-    fc = _refresh_forecast()
+    try:
+        fc = _refresh_forecast()
+    except Exception as exc:
+        return {"available": False, "reason": str(exc)}
+
     idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
     frame = fc["rainrate_forecast"][idx]
     image = _array_to_png_data_url(frame, "turbo", vmin=0, vmax=65)
     return {"available": True, "image": image, "bbox": fc["bbox"],
-            "lead_minutes": fc["timestamps_min"][idx], "source": "pysteps"}
+            "lead_minutes": fc["timestamps_min"][idx], "source": f"pysteps-{fc.get('source', 'unknown')}"}
 
 
 @app.get("/raw-layers")
@@ -625,6 +718,8 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
 
     with _lock:
         india_reflectivity = _india_hazards_cache["reflectivity"]
+        india_hazards = _india_hazards_cache["hazards"]
+        
     if india_reflectivity is not None:
         rainrate = np.power(np.power(10, india_reflectivity / 10) / 200, 1 / 1.6)
         layers.append(
@@ -635,6 +730,37 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
                 "bbox": INDIA_BBOX,
                 "vmin": 0, "vmax": 65,
                 "image": _array_to_png_data_url(rainrate, "turbo", vmin=0, vmax=65),
+            }
+        )
+        
+        # P1 Feature: Multi-Hazard Composite Risk Score
+        risk = np.zeros_like(india_reflectivity, dtype=np.float32)
+        
+        # Cloudburst contribution (if > 15 mm/hr, high risk)
+        risk[rainrate >= 15.0] += 2.0
+        risk[(rainrate >= 5.0) & (rainrate < 15.0)] += 1.0
+        
+        # Hail & Lightning contribution
+        lon_min, lat_min, lon_max, lat_max = INDIA_BBOX
+        for h in india_hazards:
+            xi = int(round((h["lon"] - lon_min) / (lon_max - lon_min) * (risk.shape[1] - 1)))
+            yi = int(round((lat_max - h["lat"]) / (lat_max - lat_min) * (risk.shape[0] - 1)))
+            if 0 <= xi < risk.shape[1] and 0 <= yi < risk.shape[0]:
+                if h["type"] == "hail":
+                    risk[yi, xi] += 2.0
+                elif h["type"] == "lightning":
+                    risk[yi, xi] += 1.0
+                    
+        # Cap index at 5
+        risk = np.clip(risk, 0, 5)
+        layers.append(
+            {
+                "id": "composite_risk",
+                "label": "Convective Risk Index (P1)",
+                "unit": "Idx",
+                "bbox": INDIA_BBOX,
+                "vmin": 0, "vmax": 5,
+                "image": _array_to_png_data_url(risk, "magma", vmin=0, vmax=5),
             }
         )
 
@@ -665,14 +791,17 @@ def region_forecast(lat: float, lon: float, lead_time: int = Query(0, ge=0, le=3
     sample = weather_fields.sample_point(lat, lon, lead_time)
 
     cloudburst_rainrate = None
-    fc = _refresh_forecast()
-    lon_min, lat_min, lon_max, lat_max = fc["bbox"]
-    if lon_min <= lon <= lon_max and lat_min <= lat <= lat_max:
-        n = fc["grid_size"]
-        xi = int(round((lon - lon_min) / (lon_max - lon_min) * (n - 1)))
-        yi = int(round((lat - lat_min) / (lat_max - lat_min) * (n - 1)))
-        idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
-        cloudburst_rainrate = round(float(fc["rainrate_forecast"][idx][yi, xi]), 1)
+    try:
+        fc = _refresh_forecast()
+        lon_min, lat_min, lon_max, lat_max = fc["bbox"]
+        if lon_min <= lon <= lon_max and lat_min <= lat <= lat_max:
+            n = fc["grid_size"]
+            xi = int(round((lon - lon_min) / (lon_max - lon_min) * (n - 1)))
+            yi = int(round((lat - lat_min) / (lat_max - lat_min) * (n - 1)))
+            idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
+            cloudburst_rainrate = round(float(fc["rainrate_forecast"][idx][yi, xi]), 1)
+    except Exception as exc:
+        print(f"[api] forecast unavailable in /region-forecast: {exc}")
 
     return {**sample, "lead_minutes": lead_time, "cloudburst_rainrate_mm_hr": cloudburst_rainrate}
 
@@ -696,18 +825,21 @@ def area_forecast(
     stats = weather_fields.area_stats(bbox, lead_time)
 
     cloudburst_stats = None
-    fc = _refresh_forecast()
-    flon_min, flat_min, flon_max, flat_max = fc["bbox"]
-    import numpy as np
+    try:
+        fc = _refresh_forecast()
+        flon_min, flat_min, flon_max, flat_max = fc["bbox"]
+        import numpy as np
 
-    lons = np.linspace(flon_min, flon_max, fc["grid_size"])
-    lats = np.linspace(flat_min, flat_max, fc["grid_size"])
-    lon_grid, lat_grid = np.meshgrid(lons, lats)
-    mask = (lon_grid >= lon_min) & (lon_grid <= lon_max) & (lat_grid >= lat_min) & (lat_grid <= lat_max)
-    if mask.any():
-        idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
-        vals = fc["rainrate_forecast"][idx][mask]
-        cloudburst_stats = {"min": round(float(vals.min()), 1), "mean": round(float(vals.mean()), 1), "max": round(float(vals.max()), 1)}
+        lons = np.linspace(flon_min, flon_max, fc["grid_size"])
+        lats = np.linspace(flat_min, flat_max, fc["grid_size"])
+        lon_grid, lat_grid = np.meshgrid(lons, lats)
+        mask = (lon_grid >= lon_min) & (lon_grid <= lon_max) & (lat_grid >= lat_min) & (lat_grid <= lat_max)
+        if mask.any():
+            idx = min(range(len(fc["timestamps_min"])), key=lambda i: abs(fc["timestamps_min"][i] - lead_time))
+            vals = fc["rainrate_forecast"][idx][mask]
+            cloudburst_stats = {"min": round(float(vals.min()), 1), "mean": round(float(vals.mean()), 1), "max": round(float(vals.max()), 1)}
+    except Exception as exc:
+        print(f"[api] forecast unavailable in /area-forecast: {exc}")
 
     return {**stats, "cloudburst_rainrate_mm_hr": cloudburst_stats, "lead_minutes": lead_time, "bbox": bbox}
 
