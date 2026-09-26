@@ -3,7 +3,7 @@ import { BASE_LAYERS, OVERLAY_LAYERS } from "../lib/mosdacLayers";
 import { VAR_COLOR_STOPS } from "../lib/colors";
 import type { ModelId, WeatherLayer } from "../types";
 
-type VarId = "none" | "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall";
+type VarId = "none" | "temperature" | "humidity" | "wind_speed" | "pressure" | "rainfall" | "composite_risk";
 
 export function LayersDrawer({
   onClose,
@@ -61,11 +61,19 @@ export function LayersDrawer({
           >
             DGMR
           </button>
+          <button
+            className={`seg-btn ${model === "smaat" ? "active" : ""}`}
+            onClick={() => onModelChange("smaat")}
+          >
+            SmaAt-UNet
+          </button>
         </div>
         <div style={{ fontSize: 10.5, color: "var(--text-dim)", marginTop: 9, lineHeight: 1.5 }}>
           {model === "pysteps"
             ? "Optical-flow extrapolation baseline. Calibrated mm/hr, 0-6h horizon."
-            : "DeepMind's pretrained Skillful Nowcasting GAN, run zero-shot. Relative intensity, not calibrated mm/hr. 0-90min horizon."}
+            : model === "dgmr"
+            ? "DeepMind's pretrained Skillful Nowcasting GAN, run zero-shot. Relative intensity, not calibrated mm/hr. 0-90min horizon."
+            : "SmaAt-UNet: Custom Spatial-Channel Attention UNet. Currently training on SEVIR dataset."}
         </div>
         <label className="check-row" style={{ marginTop: 8 }}>
           <input type="checkbox" checked={modelFrameVisible} onChange={(e) => onModelFrameVisibleChange(e.target.checked)} />
@@ -93,6 +101,9 @@ export function LayersDrawer({
           </button>
           <button className={`seg-btn ${activeVar === "rainfall" ? "active" : ""}`} onClick={() => onVarChange("rainfall")}>
             Rainfall
+          </button>
+          <button className={`seg-btn ${activeVar === "composite_risk" ? "active" : ""}`} onClick={() => onVarChange("composite_risk")}>
+            Risk Index
           </button>
         </div>
         {stops && (

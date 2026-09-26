@@ -120,7 +120,7 @@ export interface AreaForecast {
   bbox: Bbox;
 }
 
-export type ModelId = "pysteps" | "dgmr";
+export type ModelId = "pysteps" | "dgmr" | "smaat";
 
 export interface ForecastSummary {
   available: boolean;

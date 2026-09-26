@@ -36,6 +36,7 @@ export const VAR_COLOR_STOPS: Record<string, [string, string, string]> = {
   wind_speed: ["#2a1a5e", "#b53f92", "#f0b429"],
   pressure: ["#f5486b", "#f5f0c8", "#3fb6ff"],
   rainfall: ["#0b1e3d", "#2fb0e0", "#f0b429"],
+  composite_risk: ["#000004", "#b5367a", "#fcffa4"],
 };
 
 // Mirrors the vmin/vmax the backend uses for /weather-layers (main.py) so a
