@@ -53,12 +53,13 @@ The system's **default hazard view detects real hail and lightning across all of
 The React + TypeScript dashboard runs at `http://localhost:5173` and communicates with the FastAPI backend at `http://localhost:8000`.
 
 <p align="center">
-  <img src="assets/dashboard_hazards.png" width="48%" style="border-radius:10px; margin:1%;"/>
-  <img src="assets/dashboard_forecast.png" width="48%" style="border-radius:10px; margin:1%;"/>
+ <img width="466" height="212" alt="image" src="https://github.com/user-attachments/assets/2449f292-7157-4539-8c58-3db4d3df601c" />
+
+ <img width="432" height="198" alt="image" src="https://github.com/user-attachments/assets/821d5075-5c14-426d-acb6-2df367cc9600" />
+
 </p>
 <p align="center">
-  <img src="assets/dashboard_layers.png" width="48%" style="border-radius:10px; margin:1%;"/>
-  <img src="assets/dashboard_replay.png" width="48%" style="border-radius:10px; margin:1%;"/>
+  <img width="441" height="203" alt="image" src="https://github.com/user-attachments/assets/42924d95-d6cd-4b08-8bcf-ddc4f84af1de" />
 </p>
 
 ---
