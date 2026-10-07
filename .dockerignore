@@ -1,0 +1,8 @@
+nowcast/dashboard
+mobile
+nowcast/data
+__pycache__
+*.pyc
+.git
+.venv
+pitch_assets

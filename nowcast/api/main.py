@@ -42,7 +42,7 @@ from nowcast.models.eta import storm_cells
 from nowcast.models.pysteps_baseline import run_forecast, cloudburst_cells
 from nowcast.processing.fusion import build_fused_frame, list_imd_timestamps, build_fused_frame_for_timestamp
 from nowcast.processing import weather_fields
-from nowcast.alerts import sms_alerts
+from nowcast.alerts import sms_alerts, alert_store
 
 _SEVERITY_RANK = {"low": 0, "moderate": 1, "high": 2}
 _DISTRICT_CENTROIDS = {name: (lat, lon) for name, _state, lat, lon in DISTRICTS}
@@ -83,12 +83,6 @@ _SNAPSHOT_FRESH_SECONDS = INGEST_CYCLE_MINUTES * 60 * 2
 _india_hazards_cache = {"hazards": [], "reflectivity": None, "computed_at": 0, "error": None}
 _INDIA_HAZARDS_TTL_SECONDS = 180
 
-# district_key ("District, State") -> unix timestamp of the last SMS sent
-# for that district — see _maybe_send_alerts. Purely in-memory, resets on
-# restart; fine for a hackathon-timescale demo.
-_alert_cooldowns = {}
-
-
 def _district_risk_summary(hazards):
     """Aggregate the real, point-level hazard list into one risk rollup per
     district (judges think in districts, not grid cells) — count of
@@ -119,6 +113,15 @@ def _district_risk_summary(hazards):
             entry["max_severity"] = h["severity"]
 
     summary = list(by_district.values())
+    for entry in summary:
+        # 0-10 district severity score: base points per severity tier of
+        # the worst hazard seen (low=2, moderate=5, high=8), plus +1 per
+        # extra corroborating detection in that district (more hail/
+        # lightning points hitting the same district is itself a signal),
+        # capped at 10. Simple and explainable to a judge, not a black box.
+        base = {"low": 2, "moderate": 5, "high": 8}[entry["max_severity"]]
+        extra = max(0, entry["hail_count"] + entry["lightning_count"] - 1)
+        entry["severity_score"] = min(10, base + extra)
     summary.sort(key=lambda d: (_SEVERITY_RANK[d["max_severity"]], d["hail_count"] + d["lightning_count"]), reverse=True)
     return summary
 
@@ -129,25 +132,33 @@ def _maybe_send_alerts(district_summary):
     cooldown window — last-mile notification for farmers/local
     administration, called out explicitly in the problem statement. Never
     allowed to raise into the caller: a Twilio outage or misconfiguration
-    should not affect hazard detection itself."""
-    if not sms_alerts.configured():
-        return
+    should not affect hazard detection itself.
+
+    Cooldown is read from alert_store (SQLite), not an in-memory dict —
+    survives a server restart, and doubles as the audit trail the
+    /alerts/history and /alerts/cap endpoints serve."""
     now = time.time()
     threshold_rank = _SEVERITY_RANK[ALERT_MIN_SEVERITY]
     for entry in district_summary:
         if _SEVERITY_RANK[entry["max_severity"]] < threshold_rank:
             continue
-        key = f"{entry['district']}, {entry['state']}"
-        last_sent = _alert_cooldowns.get(key, 0)
-        if now - last_sent < ALERT_COOLDOWN_MINUTES * 60:
+        last_sent = alert_store.last_sent(entry["district"], entry["state"])
+        if last_sent is not None and now - last_sent < ALERT_COOLDOWN_MINUTES * 60:
             continue
         hazard_type = "hail" if entry["hail_count"] >= entry["lightning_count"] else "lightning"
-        detail = f"{entry['hail_count']} hail + {entry['lightning_count']} lightning detection(s) nearby."
+        detail = f"{entry['hail_count']} hail + {entry['lightning_count']} lightning detection(s) nearby, severity score {entry['severity_score']}/10."
+        key = f"{entry['district']}, {entry['state']}"
+        if not sms_alerts.configured():
+            # No Twilio credentials in this environment — still record the
+            # alert so the district-level cooldown/audit trail stays real
+            # even without an SMS provider configured.
+            alert_store.record(entry["district"], entry["state"], hazard_type, entry["max_severity"], detail)
+            continue
         body = sms_alerts.format_hazard_alert(entry["district"], entry["state"], hazard_type, entry["max_severity"], detail)
         try:
             sent = sms_alerts.send_sms(body)
             if sent:
-                _alert_cooldowns[key] = now
+                alert_store.record(entry["district"], entry["state"], hazard_type, entry["max_severity"], detail)
                 print(f"[api] sent hazard alert for {key} to {len(sent)} number(s)")
         except Exception as exc:
             print(f"[api] alert send failed for {key}: {exc}")
@@ -946,6 +957,62 @@ def history_hazards(timestamp: str):
         "timestamp": timestamp,
         "note": "cloudburst omitted — pySTEPS has no persisted historical sequence to replay against, see docstring",
     }
+
+
+@app.get("/alerts/history")
+def alerts_history(limit: int = Query(50, ge=1, le=500)):
+    """Real audit trail of every alert actually recorded (sent via Twilio,
+    or recorded-but-not-sent when no SMS credentials are configured) —
+    backed by alert_store's SQLite table, not an in-memory list, so it
+    survives a server restart."""
+    return {"alerts": alert_store.list_recent(limit)}
+
+
+def _cap_xml(alert):
+    """Serialize one alert as a minimal, valid OASIS CAP v1.2 <alert>
+    element (ref: docs.oasis-open.org/emergency/cap/v1.2/CAP-v1.2-os.html).
+    Deliberately minimal — enough fields to be a real, parseable CAP
+    message for NDMA/NDRF-style integration, not every optional CAP field."""
+    import datetime as _dt
+    import html
+
+    sent_iso = _dt.datetime.fromtimestamp(alert["sent_at"], tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    urgency = "Immediate" if alert["severity"] == "high" else "Expected"
+    severity_cap = {"low": "Minor", "moderate": "Moderate", "high": "Severe"}[alert["severity"]]
+    headline = html.escape(f"{alert['severity'].upper()} {alert['hazard_type']} hazard — {alert['district']}, {alert['state']}")
+    description = html.escape(alert["detail"] or "")
+    identifier = f"meghdrishti-{alert['district']}-{int(alert['sent_at'])}".replace(" ", "-")
+    return f"""  <alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
+    <identifier>{html.escape(identifier)}</identifier>
+    <sender>meghdrishti@nowcast.local</sender>
+    <sent>{sent_iso}</sent>
+    <status>Actual</status>
+    <msgType>Alert</msgType>
+    <scope>Public</scope>
+    <info>
+      <category>Met</category>
+      <event>{html.escape(alert['hazard_type'].title())}</event>
+      <urgency>{urgency}</urgency>
+      <severity>{severity_cap}</severity>
+      <certainty>Observed</certainty>
+      <headline>{headline}</headline>
+      <description>{description}</description>
+      <area>
+        <areaDesc>{html.escape(f"{alert['district']}, {alert['state']}")}</areaDesc>
+      </area>
+    </info>
+  </alert>"""
+
+
+@app.get("/alerts/cap")
+def alerts_cap(limit: int = Query(20, ge=1, le=100)):
+    """Recent alerts as a CAP v1.2 XML feed — the standard format
+    emergency-management systems (NDMA/NDRF-style integration) expect,
+    rather than a bespoke JSON shape."""
+    alerts = alert_store.list_recent(limit)
+    body = "\n".join(_cap_xml(a) for a in alerts)
+    xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<alerts>\n{body}\n</alerts>'
+    return Response(content=xml, media_type="application/xml")
 
 
 @app.get("/health")
